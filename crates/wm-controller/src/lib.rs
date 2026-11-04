@@ -1,11 +1,12 @@
-//! Wavemaker controller: Axum control-plane skeleton (WM-0104).
-//! Implementation lands in the controller commit; this keeps the workspace
-//! member compiling.
+//! Wavemaker controller (WM-0104): Axum control-plane skeleton plus the
+//! `wavemaker.control.v1` gRPC server that workers register against.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_links() {
-        assert!(true);
-    }
-}
+pub mod config;
+pub mod control;
+pub mod http;
+pub mod server;
+pub mod state;
+
+pub use config::ControllerConfig;
+pub use server::run;
+pub use state::ControllerState;

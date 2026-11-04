@@ -5,5 +5,22 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dev-dependencies]
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+figment.workspace = true
+serde.workspace = true
 tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+wm-core.workspace = true
+wm-observability.workspace = true
+wm-protocol.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace"] }
+http-body-util = "0.1"
+serde_json = "1"
+tokio-stream = "0.1"
+tempfile.workspace = true

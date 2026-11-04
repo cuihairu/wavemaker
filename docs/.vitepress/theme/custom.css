@@ -1,0 +1,7 @@
+/* Brand: navbar logo fixed at 64x64 */
+.VPNavBar .VPImage.logo,
+.VPNavBar img.logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}

@@ -5,5 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dev-dependencies]
+[dependencies]
+anyhow.workspace = true
 tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+wm-observability.workspace = true
+wm-protocol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-stream = "0.1"

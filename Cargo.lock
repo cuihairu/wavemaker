@@ -1418,7 +1418,14 @@ dependencies = [
 name = "wm-worker"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "tempfile",
  "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "wm-observability",
+ "wm-protocol",
 ]
 
 [[package]]

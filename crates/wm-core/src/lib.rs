@@ -1,7 +1,10 @@
 //! Core domain types shared across the Wavemaker crates.
 //!
-//! Phase 1 scope: identifiers, generation/epoch bookkeeping and the swell
-//! phase model. Anything larger (engine runtime, metrics) lives elsewhere.
+//! Phase 1 scope: identifiers, generation/epoch bookkeeping, the swell
+//! phase model and spectrum config validation. Anything larger (engine
+//! runtime, metrics) lives elsewhere.
+
+pub mod spectrum;
 
 use std::fmt;
 

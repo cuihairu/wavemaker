@@ -5,18 +5,18 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 ## Phase 0: Semantic Closure and Technical Verification
 
 - [ ] WM-0001: Pin down the precise definitions of Mode A/B/C in the original architecture document.
-- [ ] WM-0002: Define the domain model for Swell, Spectrum, Basin, Backend, Worker, Actor.
-- [ ] WM-0003: Close the arrival / concurrency / lifetime semantics.
-- [ ] WM-0004: Define saturation policies.
-- [ ] WM-0005: Verify concurrency curves for exponential arrival under different lifetime distributions.
-- [ ] WM-0006: Define plan-as-data and ShardPlan freezing rules.
+- [x] WM-0002: Define the domain model for Swell, Spectrum, Basin, Backend, Worker, Actor. *(docs/glossary.md)*
+- [x] WM-0003: Close the arrival / concurrency / lifetime semantics. *(docs/spec/spectrum-semantics.md)*
+- [x] WM-0004: Define saturation policies. *(docs/spec/spectrum-semantics.md §5)*
+- [x] WM-0005: Verify concurrency curves for exponential arrival under different lifetime distributions. *(tools/spectrum_sim.py + tools/test_spectrum_sim.py; results in docs/spec/spectrum-semantics.md §7)*
+- [x] WM-0006: Define plan-as-data and ShardPlan freezing rules. *(docs/adr/ADR-006-plan-as-data.md)*
 - [ ] WM-0007: Fix HDR V2 blob parameters and cross-implementation conformance tests.
 - [ ] WM-0008: Inspect the target KBEngine version's bot API and callback source code.
 - [ ] WM-0009: Verify that the KBEngine Bridge can execute commands safely in the engine scripting context.
 - [ ] WM-0010: Measure KBEngine callback scheduling granularity and Bridge queue latency.
 - [ ] WM-0011: Build a minimal Rust Worker timer benchmark.
 - [ ] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management.
-- [ ] WM-0013: Freeze Protobuf package names, version compatibility policy, and error code conventions.
+- [x] WM-0013: Freeze Protobuf package names, version compatibility policy, and error code conventions. *(docs/spec/protobuf-conventions.md; error-code skeleton, field freeze in Phase 1 WM-0103)*
 - [ ] WM-0014: Clarify the persistence boundary for Swell data.
 
 ## Phase 1: Protocol and Minimal Control Plane

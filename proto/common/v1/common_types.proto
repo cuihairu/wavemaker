@@ -1,0 +1,41 @@
+// Common types shared by all wavemaker services.
+// Compatibility: v1 allows additive evolution only (WM-0013 §2).
+
+syntax = "proto3";
+
+package wavemaker.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Error codes for OperationResult (WM-0013 §3.1 skeleton, frozen in WM-0103).
+// Zero is reserved for UNSPECIFIED; real states start at OK = 1.
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  OK = 1;
+  INVALID_ARGUMENT = 2;        // plan data or config invalid
+  FAILED_PRECONDITION = 3;     // state machine rejects the operation
+  NOT_FOUND = 4;               // swell_id / backend_id / shard_id missing
+  ALREADY_EXISTS = 5;          // duplicate registration or generation
+  PERMISSION_DENIED = 6;
+  UNAVAILABLE = 7;             // dependency temporarily unreachable
+  CAPABILITY_UNAVAILABLE = 8;  // backend lacks the requested capability
+  UNSUPPORTED = 9;             // operation unsupported at protocol level
+  ABORTED = 10;                // interrupted by StopAdmission/Drain/cancel
+  INTERNAL = 11;               // unclassified internal error
+}
+
+// Envelope for every non-streaming operation result (WM-0013 §3).
+// Every error must carry an explanatory `reason_code` (stable string) and
+// `detail`; a bare numeric code is not allowed.
+message OperationResult {
+  ErrorCode code = 1;
+  string reason_code = 2;
+  string detail = 3;
+  // Generation the result applies to; 0 when not state-related.
+  uint64 generation = 4;
+}
+
+// Monotonic wall-clock timestamp (nanosecond precision via well-known type).
+message TimePoint {
+  google.protobuf.Timestamp at = 1;
+}

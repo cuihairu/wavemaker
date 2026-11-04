@@ -1,0 +1,32 @@
+// Metrics and event reporting (plan §5.5/§5.6).
+// Phase 1 declares minimal envelope shapes; HDR V2 blob conformance rules
+// are tracked separately (WM-0007).
+
+syntax = "proto3";
+
+package wavemaker.metrics.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message MetricSample {
+  google.protobuf.Timestamp at = 1;
+  string name = 2;
+  double value = 3;
+}
+
+message MetricBatch {
+  string swell_id = 1;
+  uint64 generation = 2;
+  string worker_id = 3;
+  repeated MetricSample samples = 4;
+}
+
+// Structured lifecycle event; late events with an older generation must be
+// dropped or archived, never applied (WM-0013 §2.4).
+message LifecycleEvent {
+  google.protobuf.Timestamp at = 1;
+  string swell_id = 2;
+  uint64 generation = 3;
+  string event_type = 4;
+  string detail = 5;
+}

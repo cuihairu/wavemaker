@@ -1,0 +1,53 @@
+// Controller <-> Worker control plane (WM-0013 §1).
+// The controller hosts ControlService; workers register and heartbeat as
+// gRPC clients (plan §12.1/§12.2).
+
+syntax = "proto3";
+
+package wavemaker.control.v1;
+
+import "common/v1/common_types.proto";
+
+service ControlService {
+  // Register a worker with the controller. Handshake carries
+  // protocol_version; incompatible versions are rejected, never downgraded.
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+
+  // Periodic heartbeat; carries generation to guard against stale workers.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message RegisterWorkerRequest {
+  string worker_id = 1;
+  uint32 protocol_version = 2;
+  string adapter_version = 3;
+  string runtime_version = 4;
+  // Capability names from the backend capability directory (plan §5.3.2).
+  repeated string capabilities = 5;
+}
+
+message RegisterWorkerResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+  // Generation assigned to this registration.
+  uint64 generation = 2;
+  // Heartbeat interval the controller expects (milliseconds).
+  uint32 heartbeat_interval_ms = 3;
+}
+
+message WorkerLoad {
+  uint32 active_bots = 1;
+  double cpu_usage = 2;
+  uint64 memory_bytes = 3;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  uint64 generation = 2;
+  WorkerLoad load = 3;
+}
+
+message HeartbeatResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+  // False when the controller no longer knows this worker (lease expired).
+  bool accepted = 2;
+}

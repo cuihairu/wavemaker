@@ -1,0 +1,67 @@
+// Execution Backend interface (plan §4.1: handshake/apply_plan/...).
+// Phase 1 declares the v1 contract; state machine wiring lands later.
+
+syntax = "proto3";
+
+package wavemaker.backend.v1;
+
+import "common/v1/common_types.proto";
+
+service BackendService {
+  // Capability handshake; must carry protocol_version.
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+  // Apply a frozen ShardPlan; idempotent by plan_digest (WM-0013 §3.2).
+  rpc ApplyPlan(ApplyPlanRequest) returns (ApplyPlanResponse);
+  // Start execution; idempotent by operation_id.
+  rpc Start(StartRequest) returns (StartResponse);
+  // Stop execution; idempotent by operation_id.
+  rpc Stop(StopRequest) returns (StopResponse);
+}
+
+message HandshakeRequest {
+  uint32 protocol_version = 1;
+  string backend_id = 2;
+  string adapter_version = 3;
+  string engine_version = 4;
+}
+
+message HandshakeResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+  uint64 generation = 2;
+  // Capability names the backend actually supports.
+  repeated string capabilities = 3;
+}
+
+message ApplyPlanRequest {
+  string swell_id = 1;
+  uint64 generation = 2;
+  // Digest of the frozen ShardPlan (plan §8.4).
+  string plan_digest = 3;
+  bytes plan_payload = 4;
+}
+
+message ApplyPlanResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+}
+
+message StartRequest {
+  string swell_id = 1;
+  uint64 generation = 2;
+  string operation_id = 3;
+}
+
+message StartResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+}
+
+message StopRequest {
+  string swell_id = 1;
+  uint64 generation = 2;
+  string operation_id = 3;
+  // Grace period before kill (milliseconds).
+  uint32 grace_period_ms = 4;
+}
+
+message StopResponse {
+  wavemaker.common.v1.OperationResult result = 1;
+}

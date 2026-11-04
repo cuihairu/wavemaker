@@ -1,0 +1,36 @@
+// Engine Bot Bridge wire contract (plan §5.3).
+// Phase 1 freezes the v1 message shapes only; the bridge runtime itself is
+// Phase 2 scope. No service is declared yet — the transport is local IPC.
+
+syntax = "proto3";
+
+package wavemaker.engine.v1;
+
+import "common/v1/common_types.proto";
+
+// Bridge -> engine identification during IPC handshake (plan §12.1).
+message EngineHandshake {
+  uint32 protocol_version = 1;
+  string adapter_version = 2;
+  string engine_version = 3;
+  string backend_id = 4;
+}
+
+message EngineHandshakeAck {
+  wavemaker.common.v1.OperationResult result = 1;
+  uint64 generation = 2;
+}
+
+// A single command dispatched into the engine script context.
+message EngineCommand {
+  string operation_id = 1;
+  uint64 generation = 2;
+  string command_name = 3;
+  bytes payload = 4;
+}
+
+message EngineCommandResult {
+  string operation_id = 1;
+  uint64 generation = 2;
+  wavemaker.common.v1.OperationResult result = 3;
+}

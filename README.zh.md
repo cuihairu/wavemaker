@@ -16,6 +16,8 @@ Wavemaker 通过统一的负载模型（Spectrum）、确定性计划数据（Sh
 
 它不是单纯的 Bot 脚本框架，也不是通用分布式任务队列。
 
+<p align="center"><img src="docs/public/architecture.svg" alt="architecture"></p>
+
 ## 文档
 
 完整技术设计与实施计划发布在 **https://cuihairu.github.io/wavemaker/**，提供英文与简体中文两个版本。内容覆盖总体架构、执行后端模型、KBEngine Bridge 适配器、Spectrum 语义与确定性计划、观测设计、测试策略与分阶段实施计划。

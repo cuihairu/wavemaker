@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1250" viewBox="0 0 1280 1250" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">Wavemaker · 系统架构</title>
+<desc id="desc">Wavemaker 系统架构：Web Dashboard 与 CLI 经 HTTP/WebSocket 访问 Wavemaker Controller（Rust + Axum + Tokio，提供 Plan / Backend / Report 三个 API）；计划与结果经 Protobuf 控制协议到达 Native Worker 与 Engine Bot Supervisor 两个执行后端；Supervisor 经本地 IPC/RPC 管理 Engine Bot Process（KBEngine Bots、C++ Runtime、Python Bridge）；指标汇入 Basin（Topology / Providers / Metric Mapping / Queries，Prometheus / OTel / Custom）并进入 Swell Report Pipeline。实线为业务请求与结果，虚线为注册与管理。</desc>
+<defs><marker id="arrow-2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#2563eb"/></marker><marker id="arrow-475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#475569"/></marker><marker id="arrow-087f5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#087f5b"/></marker><marker id="arrow-c2410c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#c2410c"/></marker><marker id="arrow-6366f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#6366f1"/></marker><marker id="arrow-7c3aed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#7c3aed"/></marker></defs>
+<style>text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172b4d}.title{font-size:30px;font-weight:700}.name{font-size:23px;font-weight:700}.body{font-size:17px;fill:#435570}.small{font-size:15px;fill:#52647b}.module{font-size:17px;fill:#435570}.label{font-size:15px;fill:#435570;paint-order:stroke;stroke:#f8fafc;stroke-width:5px;stroke-linejoin:round}.edge{fill:none;stroke-linejoin:round}.control{stroke-dasharray:7 5}</style>
+<rect width="1280" height="1250" rx="20" fill="#f8fafc"/>
+<text x="40" y="48" class="title" text-anchor="start">Wavemaker · 系统架构</text>
+<text x="40" y="80" class="body" text-anchor="start">控制面、执行后端与观测面 · 实线＝业务请求 / 结果 · 虚线＝注册与管理</text>
+<path d="M640 174 V244" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M640 174 V244" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-2563eb)"/>
+<text x="654" y="216" class="label" text-anchor="start">HTTP / WebSocket</text>
+
+<path d="M640 372 V444" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M640 372 V444" class="edge" style="stroke:#475569;stroke-width:2" marker-end="url(#arrow-475569)"/>
+
+<path d="M430 516 V546 H345 V576" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M430 516 V546 H345 V576" class="edge" style="stroke:#087f5b;stroke-width:2" marker-end="url(#arrow-087f5b)"/>
+
+<path d="M850 516 V546 H935 V576" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M850 516 V546 H935 V576" class="edge" style="stroke:#087f5b;stroke-width:2" marker-end="url(#arrow-087f5b)"/>
+
+<path d="M160 576 V330 H380" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M160 576 V330 H380" class="edge control" style="stroke:#c2410c;stroke-width:2" marker-end="url(#arrow-c2410c)"/>
+<text x="174" y="470" class="label" text-anchor="start">注册 / 租约</text>
+
+<path d="M1120 576 V330 H900" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M1120 576 V330 H900" class="edge control" style="stroke:#c2410c;stroke-width:2" marker-end="url(#arrow-c2410c)"/>
+<text x="1010" y="318" class="label" text-anchor="middle">注册 / 租约</text>
+
+<path d="M935 696 V756" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M935 696 V756" class="edge control" style="stroke:#c2410c;stroke-width:2" marker-end="url(#arrow-c2410c)"/>
+<text x="949" y="732" class="label" text-anchor="start">Local IPC / RPC</text>
+
+<path d="M345 876 V986" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M345 876 V986" class="edge" style="stroke:#6366f1;stroke-width:2" marker-end="url(#arrow-6366f1)"/>
+<text x="359" y="940" class="label" text-anchor="start">指标</text>
+
+<path d="M935 906 V986" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M935 906 V986" class="edge" style="stroke:#6366f1;stroke-width:2" marker-end="url(#arrow-6366f1)"/>
+<text x="949" y="952" class="label" text-anchor="start">指标</text>
+
+<path d="M640 1102 V1142" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path d="M640 1102 V1142" class="edge" style="stroke:#7c3aed;stroke-width:2" marker-end="url(#arrow-7c3aed)"/>
+
+<rect x="470" y="110" width="340" height="64" rx="10" fill="#fff" stroke="#64748b" stroke-width="2"/>
+<text x="640" y="150" class="name" text-anchor="middle">Web Dashboard / CLI</text>
+
+<rect x="380" y="244" width="520" height="128" rx="10" fill="#fff" stroke="#2563eb" stroke-width="2"/>
+<text x="640" y="280" class="name" text-anchor="middle">Wavemaker Controller</text>
+<text x="640" y="306" class="body" text-anchor="middle">Rust + Axum + Tokio</text>
+<rect x="397.5" y="322" width="150" height="34" rx="8" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="472.5" y="345" class="small" text-anchor="middle">Plan API</text>
+<rect x="565" y="322" width="150" height="34" rx="8" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="640" y="345" class="small" text-anchor="middle">Backend API</text>
+<rect x="732.5" y="322" width="150" height="34" rx="8" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="807.5" y="345" class="small" text-anchor="middle">Report API</text>
+
+<rect x="340" y="444" width="600" height="72" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="640" y="484" class="name" text-anchor="middle">Control Protocol（控制协议）</text>
+<text x="640" y="510" class="body" text-anchor="middle">Protobuf</text>
+
+<rect x="110" y="576" width="470" height="300" rx="10" fill="#eef8f5" stroke="#087f5b" stroke-width="2"/>
+<text x="130" y="612" class="name" text-anchor="start">Native Worker</text>
+<text x="130" y="638" class="body" text-anchor="start">Rust + Tokio</text>
+<text x="130" y="674" class="module" text-anchor="start">Actor Runtime</text>
+<text x="130" y="704" class="module" text-anchor="start">Scheduler</text>
+<text x="130" y="734" class="module" text-anchor="start">Virtual Clock</text>
+<text x="130" y="764" class="module" text-anchor="start">Transport</text>
+<text x="130" y="794" class="module" text-anchor="start">Protocol</text>
+<text x="130" y="824" class="module" text-anchor="start">Metrics</text>
+
+<rect x="700" y="576" width="470" height="120" rx="10" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/>
+<text x="935" y="616" class="name" text-anchor="middle">Engine Bot Supervisor</text>
+<text x="935" y="642" class="body" text-anchor="middle">Rust</text>
+
+<rect x="760" y="756" width="350" height="150" rx="10" fill="#fff" stroke="#c2410c" stroke-width="2"/>
+<text x="780" y="792" class="name" text-anchor="start">Engine Bot Process</text>
+<text x="780" y="826" class="module" text-anchor="start">KBEngine Bots</text>
+<text x="780" y="856" class="module" text-anchor="start">C++ Runtime</text>
+<text x="780" y="886" class="module" text-anchor="start">Python Bridge</text>
+
+<rect x="240" y="986" width="800" height="116" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+<text x="640" y="1022" class="name" text-anchor="middle">Basin</text>
+<text x="640" y="1056" class="body" text-anchor="middle">Topology · Providers · Metric Mapping · Queries</text>
+<text x="640" y="1086" class="body" text-anchor="middle">Prometheus / OTel / Custom Provider</text>
+
+<rect x="440" y="1142" width="400" height="64" rx="10" fill="#fff" stroke="#7c3aed" stroke-width="2"/>
+<text x="640" y="1182" class="name" text-anchor="middle">Swell Report Pipeline（报告管线）</text>
+
+</svg>

@@ -4,6 +4,10 @@ title: 总体架构
 
 # 总体架构
 
+## 系统架构
+
+<ArchitectureDiagram />
+
 ## 2.1 逻辑架构
 
 ```text

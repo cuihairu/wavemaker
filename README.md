@@ -16,6 +16,8 @@ Wavemaker generates, manages, and analyzes the load that large numbers of virtua
 
 It is not a plain bot scripting framework, nor a general-purpose distributed task queue.
 
+<p align="center"><img src="docs/public/architecture.svg" alt="architecture"></p>
+
 ## Documentation
 
 The complete technical design and implementation plan is published at **https://cuihairu.github.io/wavemaker/**, in English and 简体中文. It covers the overall architecture, execution backend model, the KBEngine Bridge adapter, Spectrum semantics and deterministic plans, observability design, testing strategy, and the phased implementation roadmap.

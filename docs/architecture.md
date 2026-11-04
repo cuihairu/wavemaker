@@ -4,6 +4,10 @@ title: Architecture
 
 # Architecture
 
+## System Architecture
+
+<ArchitectureDiagram />
+
 ## Logical Architecture
 
 ```text

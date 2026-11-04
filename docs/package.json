@@ -3,9 +3,10 @@
   "private": true,
   "packageManager": "pnpm@10.9.0",
   "scripts": {
+    "docs:build": "pnpm run architecture:svg && vitepress build",
     "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
-    "docs:preview": "vitepress preview"
+    "docs:preview": "vitepress preview",
+    "architecture:svg": "node scripts/build-architecture-svg.mjs"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

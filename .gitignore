@@ -27,3 +27,7 @@ rustc-ice-*.txt
 docs/node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Python tooling
+__pycache__/
+.pytest_cache/

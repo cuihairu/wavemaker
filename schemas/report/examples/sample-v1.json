@@ -1,0 +1,119 @@
+{
+  "schema_version": "wavemaker.report/v1",
+  "swell_id": "swell-001",
+  "generated_at": "2026-11-05T10:30:00Z",
+  "overall_data_quality": "Complete",
+  "sections": {
+    "experiment_summary": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ],
+      "swell_name": "staging-login-capacity",
+      "backend_count": 1,
+      "started_at": "2026-11-05T10:00:00Z",
+      "ended_at": "2026-11-05T10:20:00Z"
+    },
+    "spectrum_load_profile": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "planned_vs_actual_arrival": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "concurrency_curve": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "client_performance": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "generator_health": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ],
+      "saturation": {
+        "flag": false
+      }
+    },
+    "engine_bot_backend_details": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "server_performance": {
+      "quality": "Complete",
+      "sources": [
+        "Basin"
+      ],
+      "metrics": [
+        {
+          "metric": "tick_duration_ms",
+          "unit": "ms",
+          "coverage_percent": 100.0
+        }
+      ]
+    },
+    "correlation_analysis": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "bottleneck_analysis": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "data_quality": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "test_validity": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ],
+      "verdict": "Valid"
+    },
+    "environment": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    },
+    "raw_data_references": {
+      "quality": "Complete",
+      "sources": [
+        "Planned"
+      ]
+    }
+  },
+  "conclusions": {
+    "confidence": "high",
+    "capacity_conclusion": {
+      "statement": "sustained 5000 concurrent logins with stable tick duration",
+      "based_on": [
+        "Basin",
+        "Actual"
+      ],
+      "concurrency_level": 5000
+    },
+    "bottleneck_claims": []
+  }
+}

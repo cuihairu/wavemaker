@@ -375,7 +375,7 @@ impl SpawnCtx for Option<u32> {
     fn context_spawn(self, executable: &str) -> Result<u32, SupervisorError> {
         self.ok_or(SupervisorError::Spawn {
             executable: executable.to_string(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, "pid unavailable after spawn"),
+            source: std::io::Error::other("pid unavailable after spawn"),
         })
     }
 }

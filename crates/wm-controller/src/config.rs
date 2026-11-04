@@ -48,7 +48,7 @@ impl Default for ControllerConfig {
 impl ControllerConfig {
     /// Load config from an optional TOML file plus `WM_CONTROLLER_*` env
     /// vars (e.g. `WM_CONTROLLER_HTTP_ADDR`).
-    pub fn load(path: Option<&Path>) -> Result<Self, figment::Error> {
+    pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
         let mut figment = Figment::from(figment::providers::Serialized::defaults(
             ControllerConfig::default(),
         ));
@@ -58,6 +58,7 @@ impl ControllerConfig {
         figment
             .merge(Env::prefixed("WM_CONTROLLER_").lowercase(true))
             .extract()
+            .map_err(|e| anyhow::anyhow!("controller config invalid: {e}"))
     }
 }
 

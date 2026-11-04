@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wm-core",
+    "crates/wm-protocol",
+    "crates/wm-controller",
+    "crates/wm-worker",
+    "crates/wm-supervisor",
+    "crates/wm-observability",
+    "crates/wm-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/cui/wavemaker"
+rust-version = "1.85"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+figment = { version = "0.10", features = ["env", "toml"] }
+serde_yaml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tempfile = "3"
+
+wm-core = { path = "crates/wm-core" }
+wm-protocol = { path = "crates/wm-protocol" }
+wm-controller = { path = "crates/wm-controller" }
+wm-worker = { path = "crates/wm-worker" }
+wm-supervisor = { path = "crates/wm-supervisor" }
+wm-observability = { path = "crates/wm-observability" }
+
+[profile.release]
+lto = "thin"

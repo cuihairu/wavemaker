@@ -1,0 +1,13 @@
+[package]
+name = "wm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "wm"
+path = "src/main.rs"
+
+[dev-dependencies]
+tokio.workspace = true

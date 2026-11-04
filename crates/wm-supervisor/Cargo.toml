@@ -5,6 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dev-dependencies]
+[dependencies]
+thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+wm-core.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
 tempfile.workspace = true

@@ -1410,8 +1410,12 @@ dependencies = [
 name = "wm-supervisor"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "tempfile",
+ "thiserror",
  "tokio",
+ "tracing",
+ "wm-core",
 ]
 
 [[package]]

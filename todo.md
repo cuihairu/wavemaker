@@ -11,8 +11,8 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-0005: Verify concurrency curves for exponential arrival under different lifetime distributions. *(tools/spectrum_sim.py + tools/test_spectrum_sim.py; results in docs/spec/spectrum-semantics.md §7)*
 - [x] WM-0006: Define plan-as-data and ShardPlan freezing rules. *(docs/adr/ADR-006-plan-as-data.md)*
 - [ ] WM-0007: Fix HDR V2 blob parameters and cross-implementation conformance tests.
-- [ ] WM-0008: Inspect the target KBEngine version's bot API and callback source code.
-- [ ] WM-0009: Verify that the KBEngine Bridge can execute commands safely in the engine scripting context.
+- [x] WM-0008: Inspect the target KBEngine version's bot API and callback source code. *(static audit closed: docs/spec/kbengine-api-audit.md — file:line evidence at fork commit bf1a9cd6; 7 plan-vs-source discrepancies logged; runtime items deferred to WM-0009/WM-0010 checklist)*
+- [ ] WM-0009: Verify that the KBEngine Bridge can execute commands safely in the engine scripting context. *(runtime-verification checklist prepared in docs/spec/kbengine-api-audit.md §8)*
 - [ ] WM-0010: Measure KBEngine callback scheduling granularity and Bridge queue latency.
 - [x] WM-0011: Build a minimal Rust Worker timer benchmark. *(crates/wm-core/benches/timer_scheduler.rs (criterion); baseline results in docs/benchmarks/timer-benchmark.md — load-sensitive, relative comparisons only)*
 - [ ] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management.

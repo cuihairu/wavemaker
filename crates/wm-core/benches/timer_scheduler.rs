@@ -15,7 +15,7 @@
 use std::collections::{BinaryHeap, HashSet};
 
 use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, BatchSize, Throughput,
+    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 
 const ACTOR_SCALES: [usize; 3] = [5_000, 20_000, 50_000];
@@ -60,7 +60,12 @@ impl TimerScheduler {
     fn insert(&mut self, deadline_ns: u64, actor: usize, slot: usize) {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.heap.push(Timer { deadline_ns, seq, actor, slot });
+        self.heap.push(Timer {
+            deadline_ns,
+            seq,
+            actor,
+            slot,
+        });
     }
 
     fn cancel(&mut self, seq: u64) {
@@ -109,18 +114,22 @@ fn bench_insert(c: &mut Criterion) {
     for &actors in &ACTOR_SCALES {
         let total = actors * TIMERS_PER_ACTOR;
         group.throughput(Throughput::Elements(total as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(actors), &actors, |b, &actors| {
-            b.iter(|| {
-                let mut sched = TimerScheduler::default();
-                for actor in 0..actors {
-                    for slot in 0..TIMERS_PER_ACTOR {
-                        let offset_ms = 10 * (slot + 1) as u64 + (actor as u64) % 7;
-                        sched.insert(1_000_000 * offset_ms, actor, slot);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(actors),
+            &actors,
+            |b, &actors| {
+                b.iter(|| {
+                    let mut sched = TimerScheduler::default();
+                    for actor in 0..actors {
+                        for slot in 0..TIMERS_PER_ACTOR {
+                            let offset_ms = 10 * (slot + 1) as u64 + (actor as u64) % 7;
+                            sched.insert(1_000_000 * offset_ms, actor, slot);
+                        }
                     }
-                }
-                black_box(sched.next_seq)
-            })
-        });
+                    black_box(sched.next_seq)
+                })
+            },
+        );
     }
     group.finish();
 }
@@ -130,21 +139,25 @@ fn bench_cancel(c: &mut Criterion) {
     for &actors in &ACTOR_SCALES {
         let total = actors * TIMERS_PER_ACTOR;
         group.throughput(Throughput::Elements(total as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(actors), &actors, |b, &actors| {
-            b.iter_batched(
-                || build_population(actors).0,
-                |mut sched| {
-                    // cancel every other timer, then drain the whole heap so
-                    // every cancelled timer hits the tombstone path exactly once
-                    for seq in (0..sched.next_seq).step_by(2) {
-                        sched.cancel(seq);
-                    }
-                    let fired = sched.expire(u64::MAX / 2);
-                    black_box(fired)
-                },
-                BatchSize::LargeInput,
-            )
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(actors),
+            &actors,
+            |b, &actors| {
+                b.iter_batched(
+                    || build_population(actors).0,
+                    |mut sched| {
+                        // cancel every other timer, then drain the whole heap so
+                        // every cancelled timer hits the tombstone path exactly once
+                        for seq in (0..sched.next_seq).step_by(2) {
+                            sched.cancel(seq);
+                        }
+                        let fired = sched.expire(u64::MAX / 2);
+                        black_box(fired)
+                    },
+                    BatchSize::LargeInput,
+                )
+            },
+        );
     }
     group.finish();
 }
@@ -154,18 +167,22 @@ fn bench_expire(c: &mut Criterion) {
     for &actors in &ACTOR_SCALES {
         let total = actors * TIMERS_PER_ACTOR;
         group.throughput(Throughput::Elements(total as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(actors), &actors, |b, &actors| {
-            // expiry horizon covers the whole population
-            let horizon_ns = 1_000_000 * (10 * TIMERS_PER_ACTOR as u64 + 8);
-            b.iter_batched(
-                || build_population(actors).0,
-                |mut sched| {
-                    let fired = sched.expire(horizon_ns);
-                    black_box(fired)
-                },
-                BatchSize::LargeInput,
-            )
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(actors),
+            &actors,
+            |b, &actors| {
+                // expiry horizon covers the whole population
+                let horizon_ns = 1_000_000 * (10 * TIMERS_PER_ACTOR as u64 + 8);
+                b.iter_batched(
+                    || build_population(actors).0,
+                    |mut sched| {
+                        let fired = sched.expire(horizon_ns);
+                        black_box(fired)
+                    },
+                    BatchSize::LargeInput,
+                )
+            },
+        );
     }
     group.finish();
 }

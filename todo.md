@@ -99,6 +99,16 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [ ] WM-0415: Implement data quality labels in reports.
 - [ ] WM-0416: Implement end-to-end correlation reports.
 
+## Phase 4.5: Assertion Provider（新增能力方向 / New Capability Direction）
+
+<!-- 业务正确性断言：Wavemaker 只做调度与登记，业务语义由外部 Provider 判定。设计见 docs/spec/assertion-provider.md 与 docs/adr/ADR-007-assertion-provider.md。 -->
+
+- [ ] WM-0701: Freeze the Assertion Provider contract (Execute/AssertionResult, pass|fail|inconclusive) and the Swell assertions config schema. *(design closed in docs/spec/assertion-provider.md §3 + ADR-007; schema/extensions landed in schemas/report/v1.json)*
+- [ ] WM-0702: Implement assertion registration and execution-window scheduling (after_scenario / after_recovery / periodic).
+- [ ] WM-0703: Implement the Provider transport and timeout/inconclusive handling.
+- [ ] WM-0704: Implement failure evidence archiving (`<swell_dir>/evidence/...`).
+- [ ] WM-0705: Implement report assertions-section generation and Test Validity degradation (R5) end-to-end.
+
 ## Phase 5: Distributed Execution and Recovery
 
 - [ ] WM-0501: Implement the Worker Registry.

@@ -58,6 +58,12 @@ export default defineConfig({
             ]
           },
           {
+            text: 'Specs',
+            items: [
+              { text: 'Assertion Provider', link: '/spec/assertion-provider' }
+            ]
+          },
+          {
             text: 'Planning',
             items: [
               { text: 'Roadmap', link: '/roadmap' },
@@ -115,6 +121,12 @@ export default defineConfig({
               { text: '配置设计草案', link: '/zh/configuration' },
               { text: '安全与隔离', link: '/zh/security' },
               { text: '测试与验证策略', link: '/zh/testing' }
+            ]
+          },
+          {
+            text: '规格说明',
+            items: [
+              { text: 'Assertion Provider 业务断言', link: '/zh/spec/assertion-provider' }
             ]
           },
           {

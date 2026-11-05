@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wavemaker.dev/schemas/report/v1.json",
   "title": "Wavemaker Swell Report v1",
-  "description": "Data exchange format for Wavemaker Swell reports. Structure follows plan document section 13.2 (14 report sections); conclusion constraints follow section 13.3 and are enforced at field level via if/then rules. Data quality labels follow plan section 11.3.",
+  "description": "Data exchange format for Wavemaker Swell reports. Structure follows plan document section 13.2 (14 report sections) plus the optional §15 assertions section introduced by ADR-007; conclusion constraints follow section 13.3 and are enforced at field level via if/then rules. Data quality labels follow plan section 11.3.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -111,6 +111,40 @@
       }
     },
     {
+      "$comment": "R5 (ADR-007): a failed business assertion degrades test validity — the report may never stay 'Valid' when an assertion provider reported a semantic violation.",
+      "if": {
+        "properties": {
+          "sections": {
+            "properties": {
+              "assertions": {
+                "properties": {
+                  "results": {
+                    "contains": {
+                      "properties": { "status": { "const": "fail" } },
+                      "required": ["status"]
+                    }
+                  }
+                },
+                "required": ["results"]
+              }
+            },
+            "required": ["assertions"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "properties": {
+              "test_validity": {
+                "properties": { "verdict": { "enum": ["Invalid", "Partial"] } }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "$comment": "R4 (plan 13.3 / 4.4): with multiple backends, per-backend grouping is mandatory.",
       "if": {
         "properties": {
@@ -157,8 +191,8 @@
       ]
     },
     "data_source": {
-      "description": "Origin of the data behind a section.",
-      "enum": ["Planned", "Actual", "Basin", "Generator"]
+      "description": "Origin of the data behind a section. AssertionProvider covers business-semantics assertion results delivered by external providers (ADR-007); it is never a substitute for Basin.",
+      "enum": ["Planned", "Actual", "Basin", "Generator", "AssertionProvider"]
     },
     "section_base": {
       "type": "object",
@@ -424,7 +458,53 @@
                 "required": ["path", "format"],
                 "properties": {
                   "path": { "type": "string", "minLength": 1 },
-                  "format": { "enum": ["parquet", "json", "hdr-blob-v2", "log", "other"] }
+                  "format": { "enum": ["parquet", "json", "hdr-blob-v2", "log", "evidence-bundle", "other"] }
+                }
+              }
+            }
+          }
+        },
+        "assertions": {
+          "description": "ADR-007 optional §15: business-semantics assertion results delivered by external Assertion Providers. Wavemaker only schedules and records; it is never the oracle. Optional so pre-ADR-007 reports remain valid.",
+          "allOf": [{ "$ref": "#/$defs/section_base" }],
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["provider", "name", "status", "checked_at", "evidence"],
+                "properties": {
+                  "provider": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "status": {
+                    "enum": ["pass", "fail", "inconclusive"],
+                    "$comment": "inconclusive covers provider timeout/unavailable/partial coverage; a missing provider result must be recorded as inconclusive, never rendered as pass."
+                  },
+                  "checked_at": { "type": "string", "format": "date-time" },
+                  "window": {
+                    "type": "object",
+                    "properties": {
+                      "start": { "type": "string", "format": "date-time" },
+                      "end": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  "trigger": {
+                    "enum": ["after_scenario", "after_recovery", "periodic", "other"],
+                    "description": "Execution window that produced this result (assertion-provider.md §4)."
+                  },
+                  "message": { "type": "string" },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["kind", "ref"],
+                      "properties": {
+                        "kind": { "enum": ["artifact", "query", "other"] },
+                        "ref": { "type": "string", "minLength": 1 }
+                      }
+                    }
+                  }
                 }
               }
             }

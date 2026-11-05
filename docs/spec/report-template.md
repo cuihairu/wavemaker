@@ -2,7 +2,8 @@
 
 > 状态：Phase 0 草案
 > 来源：计划书 §13.2（14 节报告结构）、§13.3（报告结论约束）、§11.3（数据质量标签）、§16.3（测试有效性）。
-> 数据交换格式：`schemas/report/v1.json`（JSON Schema draft 2020-12）；校验：`python3 tools/validate_report.py <report.json>`；单测：`python3 -m pytest tools/test_validate_report.py`（16 passed）；样例：`schemas/report/examples/sample-v1.json`。
+> 数据交换格式：`schemas/report/v1.json`（JSON Schema draft 2020-12）；校验：`python3 tools/validate_report.py <report.json>`；单测：`python3 -m pytest tools/test_validate_report.py`（24 passed）；样例：`schemas/report/examples/sample-v1.json`。
+> 扩展：第 15 节 `assertions`（业务正确性断言，ADR-007，可选节）——设计见 `docs/spec/assertion-provider.md`。
 
 ## 0. 通用约定
 
@@ -47,7 +48,8 @@
 | 11 | `data_quality` | labels_summary：8 种标签的计数 | count | 标签分布表 + 时间轴覆盖图 | 全部 |
 | 12 | `test_validity` | verdict(Valid/Invalid/Partial), failed_criteria[] | — | 判定表（判定条件见 §16.3） | Planned/Actual/Generator |
 | 13 | `environment` | versions{}, configuration_digest（= plan_digest，§8.4） | — | 版本矩阵表 | Planned |
-| 14 | `raw_data_references` | artifacts[]: path, format(parquet/json/hdr-blob-v2/log) | — | 引用清单 | 全部 |
+| 14 | `raw_data_references` | artifacts[]: path, format(parquet/json/hdr-blob-v2/log/evidence-bundle) | — | 引用清单 | 全部 |
+| 15 | `assertions`（可选，ADR-007） | results[]: provider, name, status(pass/fail/inconclusive), checked_at, trigger, message, evidence[] | — | 断言结果表 + 证据引用 | AssertionProvider |
 
 ### HDR 汇总约束（§11.2，影响第 5/8 节）
 
@@ -68,6 +70,7 @@
 | 指标曲线相关不等于因果 | correlation/bottleneck/conclusions 的 `asserts_causality` 均 `const false` | test_correlation_may_not_assert_causality |
 | CPU 高不自动证明 CPU 是唯一瓶颈 | bottleneck claim 的 `single_metric_inference` `const false`，且 `evidence` minItems=1 | test_single_metric_bottleneck_inference_rejected |
 | 不同 Backend 结果应可分组查看 | R4：`experiment_summary.backend_count ≥ 2` 时 `client_performance.per_backend` minItems=2 | test_multiple_backends_require_per_backend_grouping |
+| 业务断言失败时测试不能被渲染为有效（ADR-007 §5） | R5：`sections.assertions.results` 中任一 `status == "fail"` 时 `test_validity.verdict` 必须为 `Invalid` 或 `Partial` | test_failed_assertion_forbids_valid_verdict 等 8 例 |
 
 ## 3. 验证方式
 
@@ -76,7 +79,7 @@
 python3 tools/validate_report.py schemas/report/examples/sample-v1.json
 
 # schema + 约束单测（样例通过、坏样例拒绝）
-python3 -m pytest tools/test_validate_report.py    # 16 passed
+python3 -m pytest tools/test_validate_report.py    # 24 passed
 ```
 
 ## 4. 遗留与待确认

@@ -174,6 +174,89 @@ def test_bottleneck_claim_requires_evidence():
     assert validate_report(broken(mutate))
 
 
+# --- ADR-007 assertions section -------------------------------------------------------
+
+def assertion_result(status="pass", name="no-duplicate-roles"):
+    return {
+        "provider": "game-admin-api",
+        "name": name,
+        "status": status,
+        "checked_at": "2026-11-05T10:25:00Z",
+        "trigger": "after_scenario",
+        "message": "",
+        "evidence": [{"kind": "artifact",
+                      "ref": "swell-001/evidence/no-duplicate-roles-diff.json"}],
+    }
+
+
+def test_report_without_assertions_still_passes():
+    # assertions is an optional section (ADR-007); pre-ADR-007 reports stay valid.
+    assert validate_report(good_report()) == []
+
+
+def test_report_with_passing_assertion_passes():
+    report = good_report()
+    report["sections"]["assertions"] = make_section(
+        quality="Complete", sources=("AssertionProvider",),
+        results=[assertion_result("pass")])
+    assert validate_report(report) == []
+
+
+def test_failed_assertion_forbids_valid_verdict():
+    report = good_report()
+    report["sections"]["assertions"] = make_section(
+        quality="Complete", sources=("AssertionProvider",),
+        results=[assertion_result("fail")])
+    errors = validate_report(report)
+    assert any("verdict" in e for e in errors), (
+        "a failed assertion must downgrade test_validity away from 'Valid'")
+
+
+def test_failed_assertion_with_partial_verdict_passes():
+    report = good_report()
+    report["sections"]["assertions"] = make_section(
+        quality="Complete", sources=("AssertionProvider",),
+        results=[assertion_result("fail")])
+    report["sections"]["test_validity"]["verdict"] = "Invalid"
+    report["sections"]["test_validity"]["failed_criteria"] = [
+        "assertion:no-duplicate-roles:fail"]
+    assert validate_report(report) == []
+
+
+def test_inconclusive_assertion_allows_valid_verdict():
+    report = good_report()
+    report["sections"]["assertions"] = make_section(
+        quality="Missing", sources=("AssertionProvider",),
+        results=[assertion_result("inconclusive")])
+    assert validate_report(report) == []
+
+
+def test_invalid_assertion_status_rejected():
+    def mutate(r):
+        r["sections"]["assertions"] = make_section(
+            quality="Complete", sources=("AssertionProvider",),
+            results=[assertion_result("ok")])
+    assert validate_report(broken(mutate))
+
+
+def test_assertion_requires_evidence():
+    def mutate(r):
+        res = assertion_result("pass")
+        res["evidence"] = []
+        r["sections"]["assertions"] = make_section(
+            quality="Complete", sources=("AssertionProvider",), results=[res])
+    errors = validate_report(broken(mutate))
+    assert any("evidence" in e for e in errors)
+
+
+def test_assertion_provider_source_label_accepted():
+    # the new data-source label must be usable on ordinary sections too
+    def mutate(r):
+        r["sections"]["data_quality"]["sources"] = [
+            "Planned", "AssertionProvider"]
+    assert validate_report(broken(mutate)) == []
+
+
 # --- multi-backend grouping ----------------------------------------------------------
 
 def test_multiple_backends_require_per_backend_grouping():

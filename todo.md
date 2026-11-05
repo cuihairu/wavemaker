@@ -14,7 +14,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [ ] WM-0008: Inspect the target KBEngine version's bot API and callback source code.
 - [ ] WM-0009: Verify that the KBEngine Bridge can execute commands safely in the engine scripting context.
 - [ ] WM-0010: Measure KBEngine callback scheduling granularity and Bridge queue latency.
-- [ ] WM-0011: Build a minimal Rust Worker timer benchmark.
+- [x] WM-0011: Build a minimal Rust Worker timer benchmark. *(crates/wm-core/benches/timer_scheduler.rs (criterion); baseline results in docs/benchmarks/timer-benchmark.md — load-sensitive, relative comparisons only)*
 - [ ] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management.
 - [x] WM-0013: Freeze Protobuf package names, version compatibility policy, and error code conventions. *(docs/spec/protobuf-conventions.md; error-code skeleton, field freeze in Phase 1 WM-0103)*
 - [ ] WM-0014: Clarify the persistence boundary for Swell data.

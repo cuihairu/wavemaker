@@ -1,0 +1,64 @@
+name: Nightly Build
+
+# Rolling nightly: build + test + clippy every night and keep the binaries
+# as workflow artifacts. No version bump, no GitHub Release — releases stay
+# a separate, deliberate act.
+
+on:
+  schedule:
+    # 16:30 UTC = 00:30 CST (next day).
+    - cron: "30 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install protoc (proto codegen)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: nightly
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          date -u +%Y-%m-%d > dist/BUILD_DATE
+          git rev-parse HEAD > dist/GIT_SHA
+          cp target/release/wm dist/wm
+          cp README.md LICENSE dist/ 2>/dev/null || true
+
+      - name: Upload nightly artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wavemaker-nightly-${{ github.run_number }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

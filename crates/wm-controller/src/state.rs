@@ -16,19 +16,52 @@ pub struct WorkerEntry {
     pub registered_at: Instant,
 }
 
+/// Lifecycle of a run record. Phase 1 records the run and its stop; plan
+/// dispatch to backends lands with Phase 2 (WM-02xx).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunState {
+    Created,
+    Stopped,
+}
+
+/// One run created through `POST /api/v1/runs`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RunEntry {
+    pub run_id: String,
+    /// Swell the run belongs to; assigned by the controller when omitted.
+    pub swell_id: String,
+    /// Path of the validated spectrum config backing this run.
+    pub spectrum_path: String,
+    pub state: RunState,
+    /// Seconds since the Unix epoch.
+    pub created_at: u64,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 #[derive(Debug)]
 pub struct ControllerState {
     inner: Mutex<HashMap<String, WorkerEntry>>,
+    runs: Mutex<HashMap<String, RunEntry>>,
     heartbeat_interval: Duration,
     next_generation: Mutex<u64>,
+    next_run: Mutex<u64>,
 }
 
 impl ControllerState {
     pub fn new(heartbeat_interval_ms: u32) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
+            runs: Mutex::new(HashMap::new()),
             heartbeat_interval: Duration::from_millis(u64::from(heartbeat_interval_ms)),
             next_generation: Mutex::new(0),
+            next_run: Mutex::new(0),
         }
     }
 
@@ -100,6 +133,47 @@ impl ControllerState {
 
     pub fn remove(&self, worker_id: &str) -> bool {
         self.inner.lock().unwrap().remove(worker_id).is_some()
+    }
+
+    /// Create a run record (WM-0111 `wm run`). The controller assigns the
+    /// run id and, when the caller does not pin one, the swell id.
+    pub fn create_run(&self, swell_id: Option<String>, spectrum_path: String) -> RunEntry {
+        let mut n = self.next_run.lock().unwrap();
+        *n += 1;
+        let run_id = format!("run-{n}");
+        let swell_id = swell_id
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("swell-{n:04}"));
+        let entry = RunEntry {
+            run_id: run_id.clone(),
+            swell_id,
+            spectrum_path,
+            state: RunState::Created,
+            created_at: unix_now(),
+        };
+        self.runs.lock().unwrap().insert(run_id, entry.clone());
+        entry
+    }
+
+    pub fn run(&self, run_id: &str) -> Option<RunEntry> {
+        self.runs.lock().unwrap().get(run_id).cloned()
+    }
+
+    /// Runs ordered by creation id so `wm status` output is stable.
+    pub fn runs(&self) -> Vec<RunEntry> {
+        let mut v: Vec<RunEntry> = self.runs.lock().unwrap().values().cloned().collect();
+        v.sort_by(|a, b| a.run_id.cmp(&b.run_id));
+        v
+    }
+
+    /// Stop a run (WM-0111 `wm stop`). Idempotent: stopping an already
+    /// stopped run succeeds and leaves it stopped. Returns `None` for an
+    /// unknown run id so the API can answer 404.
+    pub fn stop_run(&self, run_id: &str) -> Option<RunEntry> {
+        let mut map = self.runs.lock().unwrap();
+        let entry = map.get_mut(run_id)?;
+        entry.state = RunState::Stopped;
+        Some(entry.clone())
     }
 }
 

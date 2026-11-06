@@ -21,19 +21,21 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 1: Protocol and Minimal Control Plane
 
-- [ ] WM-0101: Create the Rust workspace.
-- [ ] WM-0102: Implement wm-protocol Protobuf codegen.
-- [ ] WM-0103: Implement unified error codes and OperationResult.
-- [ ] WM-0104: Implement a minimal Controller Axum API skeleton.
-- [ ] WM-0105: Implement Worker gRPC registration and heartbeat.
-- [ ] WM-0106: Implement Backend capability handshake.
-- [ ] WM-0107: Implement the Supervisor process management abstraction.
-- [ ] WM-0108: Implement NativeProcessLauncher.
-- [ ] WM-0109: Implement the Backend state machine.
-- [ ] WM-0110: Implement Swell metadata and local file storage.
-- [ ] WM-0111: Implement CLI validate / run / status / stop.
-- [ ] WM-0112: Implement minimal structured logging and tracing.
-- [ ] WM-0113: Implement Controller / Worker / Supervisor integration tests.
+<!-- 对账 2026-11-06：以下勾选项均基于已落 commit + 绿色 cargo test（本地 49 tests）验证；未勾项为真实缺口，不虚标。 -->
+
+- [x] WM-0101: Create the Rust workspace. *(1e2aced；cargo workspace 7 crates；cargo test/clippy/fmt 全绿)*
+- [x] WM-0102: Implement wm-protocol Protobuf codegen. *(f8823fe；prost/tonic codegen，5 个 v1 包；wm-protocol 5 unit tests)*
+- [x] WM-0103: Implement unified error codes and OperationResult. *(f8823fe + b1b419d；proto/common/v1/common_types.proto ErrorCode/OperationResult + docs/spec/protobuf-conventions.md；5 unit tests)*
+- [x] WM-0104: Implement a minimal Controller Axum API skeleton. *(9ed9a013；axum /healthz + /api/v1/status + gRPC ControlService；http.rs 3 tests + controller state 14 tests)*
+- [x] WM-0105: Implement Worker gRPC registration and heartbeat. *(703a7b5d；WorkerSession::connect + heartbeat loop；worker 2 tests 含协议版本拒绝路径)*
+- [ ] WM-0106: Implement Backend capability handshake. *(现状：仅 proto 契约已落 f8823fe——backend/v1/backend_service.proto Handshake RPC；服务端/客户端实现缺口，本批补齐)*
+- [x] WM-0107: Implement the Supervisor process management abstraction. *(0638833；ProcessSupervisor trait start/terminate/kill/status/usage，wm-supervisor)*
+- [x] WM-0108: Implement NativeProcessLauncher. *(0638833；含 Capture/Inherit 流与 ExitRecord；8 unit tests)*
+- [ ] WM-0109: Implement the Backend state machine. *(现状：状态表定义在 docs/backends.md，代码未落；本批补齐)*
+- [ ] WM-0110: Implement Swell metadata and local file storage. *(现状：未实现——wm-core 仅有 spectrum 校验，无 swell 元数据/目录存储)*
+- [ ] WM-0111: Implement CLI validate / run / status / stop. *(现状：骨架 bc031077——validate 已真实现（spectrum 校验+违规输出）；run/status/stop 仍返回 NotImplemented)*
+- [x] WM-0112: Implement minimal structured logging and tracing. *(wm-observability::init——JSON 默认/WM_LOG_FORMAT=text/RUST_LOG 级别，幂等 init；2 unit tests；wm-cli 已接入)*
+- [ ] WM-0113: Implement Controller / Worker / Supervisor integration tests. *(现状：仅 grpc_stack.rs 1 个控制面 gRPC 测试作为地基；Controller↔Worker↔Supervisor 全链路集成测试缺口，本批补齐)*
 
 ## Phase 2: KBEngine Bridge MVP
 

@@ -4,6 +4,7 @@
 //! phase model and spectrum config validation. Anything larger (engine
 //! runtime, metrics) lives elsewhere.
 
+pub mod backend;
 pub mod spectrum;
 
 use std::fmt;
@@ -57,6 +58,18 @@ impl fmt::Display for WorkerId {
 impl fmt::Display for BackendId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for BackendId {
+    fn from(s: &str) -> Self {
+        BackendId(s.to_string())
+    }
+}
+
+impl From<String> for BackendId {
+    fn from(s: String) -> Self {
+        BackendId(s)
     }
 }
 

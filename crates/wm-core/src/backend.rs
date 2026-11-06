@@ -292,19 +292,34 @@ mod tests {
         assert!(matches!(err, StateMachineError::InvalidTransition { .. }));
     }
 
-    /// Drive a machine into `start` (always via Ready) and apply `action`.
+    /// Drive a machine through the linear lifecycle up to `start` and apply
+    /// `action`. `start` must be on the Handshaking→…→Draining chain.
     fn drive_to(
         start: BackendState,
         action: impl FnOnce(&mut BackendStateMachine),
     ) -> BackendStateMachine {
+        let chain = [
+            BackendState::Handshaking,
+            BackendState::Ready,
+            BackendState::Initialized,
+            BackendState::PlanAccepted,
+            BackendState::Running,
+            BackendState::AdmissionStopped,
+            BackendState::Draining,
+        ];
         let mut m = machine();
         let g = m.generation();
-        m.transition(g, BackendState::Handshaking, "ok", "")
-            .unwrap();
-        m.transition(g, BackendState::Ready, "ok", "").unwrap();
-        if start != BackendState::Ready {
-            m.transition(g, start, "ok", "").unwrap();
+        for &step in &chain {
+            m.transition(g, step, "ok", "").unwrap();
+            if step == start {
+                break;
+            }
         }
+        assert_eq!(
+            m.state(),
+            start,
+            "drive_to must land on the requested state"
+        );
         action(&mut m);
         m
     }

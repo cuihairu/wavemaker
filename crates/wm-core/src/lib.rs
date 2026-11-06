@@ -6,6 +6,7 @@
 
 pub mod backend;
 pub mod spectrum;
+pub mod store;
 
 use std::fmt;
 

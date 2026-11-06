@@ -32,7 +32,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-0107: Implement the Supervisor process management abstraction. *(0638833；ProcessSupervisor trait start/terminate/kill/status/usage，wm-supervisor)*
 - [x] WM-0108: Implement NativeProcessLauncher. *(0638833；含 Capture/Inherit 流与 ExitRecord；8 unit tests)*
 - [x] WM-0109: Implement the Backend state machine. *(95fb3fa + 49c1b51 + 476a2e1；wm-core BackendStateMachine 线性生命周期 + Degraded/Failed/Recovering + generation 守卫；core 24 tests，worker 侧经 BackendService 集成)*
-- [ ] WM-0110: Implement Swell metadata and local file storage. *(现状：未实现——wm-core 仅有 spectrum 校验，无 swell 元数据/目录存储)*
+- [x] WM-0110: Implement Swell metadata and local file storage. *(wm-core::store——SwellStore 本地文件存储：`<root>/<swell_id>/` 下 metadata.json（temp+rename 原子写）与 timeline.jsonl 事件时间线分离，evidence/ 数据子树按 `<swell_dir>/evidence/<assertion-name>/<timestamp>/` 约定预创建（ADR-007/assertion-provider §6），swell id/断言名路径段校验防逃逸；11 unit tests；遵循 tech-stack.md 文件系统+JSON、元数据与实验数据分离）*
 - [x] WM-0111: Implement CLI validate / run / status / stop. *(validate 原已真实现；run/status/stop 接控制器 REST：POST/GET /api/v1/runs + /runs/{id}/stop + GET /api/v1/status，wm-cli 8 unit tests + cli_stack.rs 3 个 CLI↔控制器栈测试；无效 spectrum 在联系控制器前即以退出码 1 拒绝)*
 - [x] WM-0112: Implement minimal structured logging and tracing. *(wm-observability::init——JSON 默认/WM_LOG_FORMAT=text/RUST_LOG 级别，幂等 init；2 unit tests；wm-cli 已接入)*
 - [x] WM-0113: Implement Controller / Worker / Supervisor integration tests. *(crates/wm-controller/tests/full_chain.rs：真实 gRPC+HTTP 控制器 + WorkerSession 注册/心跳 + HTTP status 可见 + NativeProcessLauncher start/status/terminate + 异常退出记录 + 协议版本握手拒绝；4 个全链路测试)*

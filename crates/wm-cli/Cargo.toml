@@ -12,9 +12,14 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_yaml.workspace = true
+ureq = { version = "2", features = ["json"] }
 wm-core.workspace = true
 wm-observability.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 tempfile.workspace = true
+tokio.workspace = true
+wm-controller.workspace = true

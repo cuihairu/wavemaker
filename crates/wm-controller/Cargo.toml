@@ -24,3 +24,6 @@ http-body-util = "0.1"
 serde_json = "1"
 tokio-stream = "0.1"
 tempfile.workspace = true
+ureq = { version = "2", features = ["json"] }
+wm-supervisor.workspace = true
+wm-worker.workspace = true

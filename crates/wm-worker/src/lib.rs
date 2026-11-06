@@ -8,6 +8,8 @@ use anyhow::{bail, Context};
 use std::time::Duration;
 use tokio::sync::watch;
 use tonic::transport::Channel;
+
+pub mod backend;
 use wm_protocol::common::v1::ErrorCode;
 use wm_protocol::control::v1::control_service_client::ControlServiceClient;
 use wm_protocol::control::v1::{HeartbeatRequest, RegisterWorkerRequest, WorkerLoad};

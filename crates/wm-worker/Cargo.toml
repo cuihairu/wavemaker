@@ -10,6 +10,7 @@ anyhow.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+wm-core.workspace = true
 wm-observability.workspace = true
 wm-protocol.workspace = true
 

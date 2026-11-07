@@ -97,6 +97,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [ ] WM-0411: Implement observation overhead evaluation and degradation.
 - [ ] WM-0412: Implement Generator Metrics aggregation.
 - [ ] WM-0413: Implement Server Metrics aggregation.
+- [ ] WM-0417: Implement report throughput metrics (QPS / TPS). *(用户 2026-11-08 问「报告是否含 qps/tps」——当前无。qps=请求/秒、tps=事务或消息/秒；服务端口径取自 Basin `server_performance.metrics`，客户端口径取自 `client_performance.per_backend`；输出含时间序列曲线 + 峰值 + p50/p95/p99；验收=跑一次 swell 后 `wm report` 导出的 JSON/Markdown 含 qps/tps 且与实际压测量级一致)*
 - [ ] WM-0414: Implement timeline alignment.
 - [ ] WM-0415: Implement data quality labels in reports.
 - [ ] WM-0416: Implement end-to-end correlation reports.

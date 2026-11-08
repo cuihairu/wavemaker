@@ -24,7 +24,22 @@ Wavemaker 通过统一的负载模型（Spectrum）、确定性计划数据（Sh
 
 ## 状态
 
-Wavemaker 处于设计阶段。本仓库目前托管设计文档与实施计划；文档中的分阶段路线图（Phase 0–6）定义了实现顺序。目前没有可安装的产物。
+Wavemaker 处于持续构建阶段。Phase 0（语义）与 Phase 1（协议 + 最小控制面）已实现并有测试覆盖；文档中的分阶段路线图（Phase 0–6）定义了实现顺序。
+
+## 每日构建
+
+最新滚动构建请到 **Releases 页**（`nightly` 发布）获取：
+
+- **https://github.com/cuihairu/wavemaker/releases/tag/nightly**
+
+每天 05:17（北京时间）落一个新构建。按平台选择资产：
+
+| 资产 | 平台 | 验证 |
+|---|---|---|
+| `wavemaker-linux-x86_64` | Linux x86_64 | `./wavemaker-linux-x86_64 --version` |
+| `wavemaker-linux-aarch64` | Linux ARM64 | `./wavemaker-linux-aarch64 --version` |
+
+每个资产附带 `.sha256` 校验和；只保留最新一份构建（旧的会被替换，不会累积）。二进制未签名——SmartScreen/Gatekeeper 可能告警。
 
 ## 许可证
 

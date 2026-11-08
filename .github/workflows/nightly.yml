@@ -74,9 +74,9 @@ jobs:
         run: |
           set -e
           mkdir -p dist
-          cp target/release/wm "dist/wavemaker-${{ matrix.name }}"
-          sha256sum "dist/wavemaker-${{ matrix.name }}" \
-            > "dist/wavemaker-${{ matrix.name }}.sha256"
+          cd dist
+          cp "../target/release/wm" "wavemaker-${{ matrix.name }}"
+          sha256sum "wavemaker-${{ matrix.name }}" > "wavemaker-${{ matrix.name }}.sha256"
           {
             echo "Wavemaker nightly build"
             echo "platform: ${{ matrix.name }}"

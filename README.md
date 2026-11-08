@@ -24,7 +24,22 @@ The complete technical design and implementation plan is published at **https://
 
 ## Status
 
-Wavemaker is in the design stage. This repository currently hosts the design documentation and the implementation plan; the phased roadmap (Phase 0–6) in the documentation defines what gets built and in what order. There is nothing to install yet.
+Wavemaker is in the active-build stage. Phase 0 (semantics) and Phase 1 (protocol + minimal control plane) are implemented and tested; the phased roadmap (Phase 0–6) in the documentation defines what gets built and in what order.
+
+## Daily Builds
+
+Get the latest rolling build from the **Releases page** (the `nightly` release):
+
+- **https://github.com/cuihairu/wavemaker/releases/tag/nightly**
+
+A new build lands daily (05:17 CST). Choose your asset:
+
+| Asset | Platform | Verify |
+|---|---|---|
+| `wavemaker-linux-x86_64` | Linux x86_64 | `./wavemaker-linux-x86_64 --version` |
+| `wavemaker-linux-aarch64` | Linux ARM64 | `./wavemaker-linux-aarch64 --version` |
+
+Each asset ships with a `.sha256` checksum; the latest build is always the only copy (older builds are replaced, never accumulated). Binaries are unsigned — SmartScreen/Gatekeeper may warn.
 
 ## License
 

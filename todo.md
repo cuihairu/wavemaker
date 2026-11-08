@@ -50,8 +50,8 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-DB-6: Publish to the single rolling `nightly` Release (delete-and-recreate), notes carry commit + asset list. *(publish job)*
 - [x] WM-DB-7: Publish runs on `schedule`, not dispatch-only. *(publish 无 event 条件)*
 - [x] WM-DB-8: `gh release edit nightly --draft=false` + assert non-empty publishedAt and assets. *(publish job 尾部断言)*
-- [ ] WM-DB-9: Dispatch by hand once and verify the `nightly` Release shows fresh assets; confirm no version tag appeared.
-- [ ] WM-DB-10: Add a README section pointing at the Releases page with an asset→platform table.
+- [x] WM-DB-9: Dispatch by hand once and verify the `nightly` Release shows fresh assets; confirm no version tag appeared. *(run 42494394105 全绿；nightly Release 6 assets、draft=false、publishedAt 2026-11-08T15:33:01Z；下载 x86_64 二进制实测 --version=wm 0.1.0、sha256 匹配、validate 通过；无版本 tag，仅 refs/tags/nightly)*
+- [x] WM-DB-10: Add a README section pointing at the Releases page with an asset→platform table. *(README.md + README.zh.md「每日构建」节)*
 
 ## Phase 2: KBEngine Bridge MVP
 

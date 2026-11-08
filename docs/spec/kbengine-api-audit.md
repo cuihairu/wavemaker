@@ -1,6 +1,6 @@
 # KBEngine Bot API 静态审计（WM-0007 / WM-0008 静态部分）
 
-> 状态：Phase 0 静态审计完成；运行时验证清单见 §8（挂 WM-0009 / WM-0010）。
+> 状态：Phase 0 静态审计完成；原 §8 运行时清单已于 2026-11-09 静态闭合 8/8（S1–S8），残留运行时项 RT1–RT4 标注 BLOCKED（§8.2，挂 WM-0009 / WM-0010）。
 > 源码版本：`~/workspaces/kbengine`，KBEngine v2.5.10 fork（`kbe/src/lib/common/kbeversion.h:10-12`），审计时 HEAD commit `bf1a9cd6f4a82dd715fcf4a69697382ed531b4c0`（2026-11-05）。所有 `file:line` 均指向该 commit。
 > 判定规则：与计划书描述不一致时**以源码为准**并在本文件标注；仅引用上游文档而未对照源码的结论一律标「待验证」。
 
@@ -141,19 +141,55 @@ KBEngine.cancelCallback(callbackID: int)   # 恰好 1 个参数，"i" 解析
 | D6 | onInit 无参钩子 | 带 1 个 int 实参（值 0）；异常中止启动 | Bridge bootstrap 签名必须 `def onInit(arg)` |
 | D7 | onFinish 可等待异步收尾 | 同步调用、异常不阻断退出 | Drain/Shutdown 不依赖 onFinish |
 
-## 8. WM-0009 运行时验证清单（Bridge 执行安全性）
+## 8. WM-0009/WM-0010 检查表：静态闭合记录（2026-11-09）与残留运行时项
 
-静态结论：**所有 Python 脚本回调（含 timer 回调、事件、onInit/onFinish）都跑在 bots 主循环线程**（`clientobjectbase.cpp:248-250` handleTimers 由 `tickSend` 驱动；`event_dispatcher.cpp:151,197` processTimers 在主 dispatcher 循环）。源码中**没有**把脚本调用投递到其他线程的路径。以下项仍必须运行时验证（WM-0009）：
+> 原清单的 8 个「必须运行时验证」项已于 2026-11-09 逐项静态验证。基线：fork HEAD `3082ab50d24f551336b52170a7388891914968fd`（2026-11-07）——较 §1–§7 审计时的 `bf1a9cd6` 新增一个 pyscript 缓冲修复，故个别行号存在 ±1–2 漂移；**本节行号均按 3082ab50 重新核对**。
+> 结果：8/8 项静态闭合（含一项推翻文档注释的发现，见 S8）；真正需要运行时测量的残留项收敛为 RT1–RT4（§8.2），全部标注 BLOCKED 与原因。
 
-1. **单线程假设成立性**：确认 Bridge IPC 接收线程不直接调用任何脚本 API（跨线程调用 Python 是未定义行为；必须经队列投递到主循环）——静态建议成立，运行时以日志/断言验证。
-2. **回调内长时间阻塞的后果**：callback 内 sleep/IO 会阻塞整个 bots 网络循环（含心跳与收包）——测量可容忍阻塞上限（与 WM-0010 的队列滞后测量合并做）。
-3. **回调异常传播**：timer 回调抛异常后当轮 tick、后续 timer、以及连接状态是否受影响（静态未展开异常路径）。
-4. **GIL 与 telnet 调试通道并发**：telnet server（`bots.cpp:90-93`）共享脚本运行时，调试期是否引发额外 GIL 竞争。
-5. **ScriptID 复用/溢出**（见 §4）。
-6. **onInit 重入**（见 §5）：恢复/重启场景。
-7. **`bots` 映射快照一致性**（见 §2）：遍历期间 bot 增减。
-8. **addBots 节流参数实际行为**（见 §1）：tickCount/tickTime 与 `CreateAndLoginHandler` 的真实换算。
+### 8.1 静态闭合项（S1–S8）
+
+**S1 单线程假设——闭合。**
+bots 进程恰好一个线程池且永不使用：`ClientApp` 构造 `thread::ThreadPool`（`clientapp.h:251`）并 `createThreadPool(1,1,4)` 建 1 个工人（`clientapp.cpp:159-160`），该工人只在条件变量上等待（`thread/threadpool.cpp:23-29,779`），client_lib 与 bots 工具中**无任何** `addTask` 调用（全树仅 loginapp/baseapp/guiconsole 使用）。所有脚本入口都在主循环内：`kbeMainT` 单线程 initialize→run（`kbemain.h:272,281`）；`ClientApp::run` = `processUntilBreak()`（`clientapp.cpp:442-446`）；`processOnce` 串行执行 tasks→timers→network（`event_dispatcher.cpp:189-207`）；timer 回调、onInit/onFinish、telnet Python、console exec、实体回调全部在此循环内派发。**推论：跨线程直接调脚本 API 是未定义行为——Bridge IPC 线程必须经队列投递到主循环（wavemaker 侧纪律，RT3）。**
+
+**S2 回调内阻塞的影响范围——闭合（机制）；容忍时长归 RT1。**
+`processTimers` → 游戏 tick → `handleGameTick`（`clientapp.cpp:364-439`）串行做：`threadPool_.onMainThreadTick`、`processChannels`（收包→实体回调）、`tickSend`（`clientobjectbase.cpp:168-199`：handleTimers + 每 `g_channelExternalTimeout/2` 的 active-tick 心跳 + updatePlayerToServer）、poller 事件与逐 bot `gameTick`（`bots.cpp:274,279-293`）。timer 派发是无预算的 drain 循环（`timer.inl:107-140`）。**一个阻塞回调会拖住：定时器、收包、心跳、发包、断线检测**（`onChannelTimeOut` 同在此循环，`clientapp.cpp:567-574`——阻塞过久可被服务端踢）。空闲 poller 等待上限 0.1s（`event_dispatcher.cpp:19,131-142`）。
+
+**S3 回调异常传播——闭合。**
+路径：`timer.inl:252-268` → `ScriptCallbackHandler::handleTimeout`（`script_callbacks.cpp:169-185`）：`PyObject_CallFunction` 后 `SCRIPT_ERROR_CHECK()`，而该宏只做 `if (PyErr_Occurred()) PyErr_PrintEx(0)`（`pyscript/scriptobject.h:39-46`）——**异常被打印并吞掉**：无 C++ 错误位、不中断 tick、不影响连接。重复型 timer 无条件重臂（`timer.inl:258-266`），持续抛异常的重复回调会每个周期打印 traceback 并继续触发。一次性 timer 触发后照常删除。（注：审计早期草稿中的 `handleScriptTimer` 符号在本 fork 不存在，唯一路径即 `ScriptCallbackHandler::handleTimeout`。）
+
+**S4 GIL 与 telnet——闭合（无竞争）；真实风险是内联阻塞。**
+telnet server 挂在同一主 dispatcher 与主解释器上：`bots.cpp:90-95` `new TelnetServer(&dispatcher(), &networkInterface()); pScript(&getScript())`；监听/连接 fd 注册进主 poller（`telnet_server.cpp:87,168`），`TelnetServer/TelnetHandler` 均为 `InputNotificationHandler`，全部在主线程派发；`telnet_server.cpp/telnet_handler.cpp` 不创建任何线程。telnet **能**执行 Python：`processPythonCommand` → `pScript()->run_simpleString(...)`（`telnet_handler.cpp:795-814`），但始终在持 GIL 的主线程内——**无 GIL 竞争，静态风险与 S2 同源：任意 telnet Python 语句内联阻塞网络循环**。等价路径还有 console `onExecScriptCommand`（`bots.cpp:467-497`，`:485` run_simpleString）。
+
+**S5 ScriptID 复用/溢出——闭合（复用成立，风险真实）。**
+`typedef int32 ScriptID`（`platform.h:352`）；分配**非单调**：取最小空闲正整数（`script_callbacks.cpp:77-87` 逐号扫描）；回调触发/cancel 后 map 条目擦除（`script_callbacks.cpp:188-192,105-127,90-102`），擦除后同号即复用，**无任何复用保护**——旧 ID 在触发后再 cancel 会静默误杀同对象上新回调（与 §4「静默 None」复合）。命名空间是**每 `ClientObjectBase` 一个**（`clientobjectbase.h:496-497`），不同 bot 间 ID 1..N 重复。溢出需单 bot 同时 ~2^31 活跃回调（不可达；无显式护栏）。`addCallback` 在 `timers_.add` 失败时返回 0（`script_callbacks.cpp:73`），0 为保留非法值（ID 从 1 起）。
+**Bridge 纪律（RT3 的一部分）：回调句柄只在「未触发」窗口内 cancel，触发后一律依赖记账而非 cancel 反馈。**
+
+**S6 onInit 重入——闭合（每进程恰好一次）。**
+`kbeMainT` 只调一次 `initialize()`（`kbemain.h:272`），失败即 finalise 返回 −1，无重试；bots 的 initialize 链单向到 `initializeEnd`（`clientapp.cpp:157-174`），全树 `initializeEnd` 仅此一个调用点；shutdown 走 `breakProcessing` → `processUntilBreak` 退出 → finalise（`kbemain.h:281-286`），终局不可逆。**「重启」只能是新进程 → 全新 onInit**；残留仅 wavemaker 侧问题：Supervisor 重启策略与 onInit 副作用的跨进程幂等（不在 kbe 树内，RT3 处理）。
+
+**S7 `bots` 映射快照一致性——闭合。**
+`pyKeys/pyValues/pyItems` 直接无锁迭代 live `std::map` 构建 Python list（`pybots.cpp:89-150`）。两个事实使竞态静态不可能：(a) 单线程（S1）——增（`create_and_login_handler.cpp:54-61`→`bots.cpp:500-506`）与删（`bots.cpp:286-290,515-525`）都发生在同一主循环 tick；(b) 迭代体内只做 `PyLong_FromLong/Py_INCREF/PyList_SET_ITEM`，不重入 Python。返回值是 INCREF 快照（后续 delClient 不使其失效），但列出的 `ClientObject` 之后可能被销毁——沿用 `bots.cpp:286-290` 的 `isDestroyed` 守卫模式。`len()`/`bots[id]` 读 live（`pybots.cpp:56-80`）。
+
+**S8 addBots 节拍——闭合（推翻 `bots.h:124-129` 文档注释）。**
+`CreateAndLoginHandler` 注册**固定 1 秒**重复 timer（`create_and_login_handler.cpp:20-21`，`addTimer` 默认重复，`event_dispatcher.inl:7-12`），与 gameUpdateHertz 无关。`handleTimeout`（`:37-62`）逻辑：`static float lasttick` 首次触发时捕获 `reqCreateAndLoginTickTime()`，每秒减 0.1 直到 ≤0（**tickTime 是一次性前置延迟、以 0.1 为单位计秒，不是「一个 tick 的时间」——bots.h 文档注释与实现不符**）；闸门打开后速率恒为每秒 `tickCount` 个 bot（`lasttick` 永不复位）。默认值 `totalCount=10, tickTime=0.1, tickCount=5`（`kbengine_defaults.xml:867-873`），可被 `server/kbengine.xml` 覆盖，无 C++ 兜底。两个附加事实：(a) 停止条件是「维持 N 存活」——bot 被踢后 `delClient` 缩量、handler 会补建（补建也受 StopAdmission 预算约束）；(b) `clients().size() > totalCount` 时 uint32 下溢产生巨大第一操作数，但 `count-- > 0` 钳制使单次爆发仍 ≤ tickCount。真实到达时刻是「下个 gameTick 的 `C_STATE_INIT`」（`clientobject.cpp:414-455`）——**到达精度上界 = 两个周期之和：~1s（建批）+ gameTick（100ms 默认）**，Mode A 的 `exact_arrival` 能力声明必须以此为界。
+
+### 8.2 残留运行时项（BLOCKED）
+
+| # | 残留项 | 挂靠 | BLOCKED 原因 |
+|---|---|---|---|
+| RT1 | 回调调度滞后 p50/p99、可容忍阻塞时长实测（S2/S4 的数值面） | WM-0010 | 需运行中的 bots 进程 + 引擎集群；本机无部署（kbengine-build 工作区存在构建产物，但无运行进程/集群配置），静态只能给出 100ms 量化下界（§3） |
+| RT2 | CPython 派生行为：`PyErr_PrintEx` 遇 `SystemExit` 的进程退出路径、脚本级 `sys.excepthook` 的干预 | WM-0009 残留 | 取决于嵌入解释器行为，不在 kbe 源码内静态可证 |
+| RT3 | wavemaker Bridge IPC 线程纪律（投递到主循环）、句柄 cancel 窗口（S5）、Supervisor 重启幂等（S6） | WM-0202/0206/0212 | Bridge 未实现（Phase 2）；落地时以 S1–S8 为实现约束并复测 |
+| RT4 | 负载下 addBots/timer 节拍的墙钟抖动（S8 的数值面） | WM-0010 | 同 RT1，需真实负载环境 |
+
+### 8.3 对 Phase 2 的实现约束（由 S1–S8 导出）
+
+1. Bridge IPC 收包线程**只入队不调脚本**；主循环侧用 `KBEngine.callback` 驱动队列消费（粒度 100ms，§3/D4）。
+2. 一切对 `KBEngine.bots` 的遍历须先取 `keys()` 快照并逐项 `isDestroyed` 守卫（S7）。
+3. 回调 ID 记账由 Bridge 自管：仅对「已注册未触发」句柄 cancel；不复用引擎侧 ID 语义（S5/D5）。
+4. Bridge 批次预算按 S8 换算建模到达（1s 批 + gameTick 量化），`exact_arrival` 声明 Degraded。
+5. Bridge 不得在 onInit/onFinish 内做异步收尾（D6/D7）；脚本异常按 S3 语义「打印即吞」，Bridge 自身状态机不能依赖回调必然成功。
 
 ## 9. 结论
 
-WM-0007/WM-0008 的静态部分闭合：六个 API 的签名、参数、调用时机、失败语义均有 file:line 级源码证据，7 项与计划书不符处以源码为准并已在 §7 登记。运行时部分（粒度实测、异常传播、线程投递安全性）保留在 WM-0009/WM-0010，清单见 §8。**上游版本对照（官方 kbengine 2.5.10 与本 fork 的差异）不在本次范围，若切换目标引擎版本必须重跑本审计。**
+WM-0007/WM-0008 的静态部分闭合：六个 API 的签名、参数、调用时机、失败语义均有 file:line 级源码证据，7 项与计划书不符处以源码为准并已在 §7 登记。**WM-0009/WM-0010 检查表（原 §8）已于 2026-11-09 静态闭合 8/8 项（S1–S8，基线 3082ab50），残留收敛为 RT1–RT4 运行时测量，BLOCKED 原因见 §8.2；对 Phase 2 Bridge 的实现约束已导出（§8.3）。** 上游版本对照（官方 kbengine 2.5.10 与本 fork 的差异）不在本次范围，若切换目标引擎版本必须重跑本审计。

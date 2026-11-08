@@ -37,6 +37,22 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-0112: Implement minimal structured logging and tracing. *(wm-observability::init——JSON 默认/WM_LOG_FORMAT=text/RUST_LOG 级别，幂等 init；2 unit tests；wm-cli 已接入)*
 - [x] WM-0113: Implement Controller / Worker / Supervisor integration tests. *(crates/wm-controller/tests/full_chain.rs：真实 gRPC+HTTP 控制器 + WorkerSession 注册/心跳 + HTTP status 可见 + NativeProcessLauncher start/status/terminate + 异常退出记录 + 协议版本握手拒绝；4 个全链路测试)*
 
+## Phase 1.5: Daily build and distribution（每日构建）
+
+<!-- 用户反复要求：每日构建必须落在 Releases 页的滚动 nightly，不能只躺在 Actions artifacts 里。
+     现状：nightly.yml 已改成 schedule 即发布到滚动 nightly Release（48h 门禁 + 两个架构 + SHA256 + draft=false + 落地断言）。 -->
+
+- [x] WM-DB-1: Replace the artifact-only nightly with a rolling `nightly` Release workflow. *(.github/workflows/nightly.yml — schedule 即 publish，不再「releases 是独立动作」)*
+- [x] WM-DB-2: 48h staleness gate; `workflow_dispatch` always builds. *(gate job，schedule 才看 HEAD 年龄)*
+- [x] WM-DB-3: Build `wm` release for linux-x86_64 + linux-aarch64. *(build matrix)*
+- [x] WM-DB-4: Smoke gate: `wm --version`, good config exit 0, bad config non-zero. *(Smoke gate step)*
+- [x] WM-DB-5: Per-platform asset `wavemaker-<platform>` + `.sha256` + platform notes. *(Stage step)*
+- [x] WM-DB-6: Publish to the single rolling `nightly` Release (delete-and-recreate), notes carry commit + asset list. *(publish job)*
+- [x] WM-DB-7: Publish runs on `schedule`, not dispatch-only. *(publish 无 event 条件)*
+- [x] WM-DB-8: `gh release edit nightly --draft=false` + assert non-empty publishedAt and assets. *(publish job 尾部断言)*
+- [ ] WM-DB-9: Dispatch by hand once and verify the `nightly` Release shows fresh assets; confirm no version tag appeared.
+- [ ] WM-DB-10: Add a README section pointing at the Releases page with an asset→platform table.
+
 ## Phase 2: KBEngine Bridge MVP
 
 - [ ] WM-0201: Create the KBEngine Bridge Python bootstrap.
@@ -134,6 +150,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 <!-- 仅在 v1 产品形态需要时启动 / Only start when the v1 product form requires it. -->
 
+- [ ] WM-0600: Decide the desktop surface (native shell + web view vs web-only). *(用户 2026-11-08 问「桌面界面没有设计」——先拍板形态再启动 Phase 6；候选：Tauri(原生壳+WebView)/Electron/纯 Web 仪表盘；推荐 Tauri——体积小、Rust 后端可直接调 controller)*
 - [ ] WM-0601: Implement Swell list and detail views.
 - [ ] WM-0602: Implement Backend / Worker status pages.
 - [ ] WM-0603: Implement Spectrum editing and validation display.

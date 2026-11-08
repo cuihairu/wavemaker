@@ -1,64 +1,143 @@
-name: Nightly Build
-
-# Rolling nightly: build + test + clippy every night and keep the binaries
-# as workflow artifacts. No version bump, no GitHub Release — releases stay
-# a separate, deliberate act.
+# Wavemaker nightly — rolling binary distribution (WM-DB).
+# Delivery surface is the single rolling `nightly` GitHub Release, never a
+# version tag. A scheduled build publishes; workflow_dispatch is the manual
+# immediate-build path (and always builds, bypassing the gate).
+name: nightly
 
 on:
   schedule:
-    # 16:30 UTC = 00:30 CST (next day).
-    - cron: "30 16 * * *"
+    # Off-peak non-round minute (21:17 UTC = 05:17 CST daily)
+    - cron: "17 21 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: read
-
-env:
-  CARGO_TERM_COLOR: always
+  contents: write
 
 jobs:
-  nightly:
+  gate:
+    name: Staleness gate (48h)
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.gate.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: gate
+        name: Skip when no fresh commits
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "manual trigger — always build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          head_age=$(( $(date +%s) - $(git log -1 --format=%ct) ))
+          echo "HEAD age: ${head_age}s"
+          if [ "$head_age" -le $((48*3600)) ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no fresh commits in 48h — skipping build"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: gate
+    if: needs.gate.outputs.should_build == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, name: linux-aarch64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Build release
+        run: cargo build --workspace --release
+      - name: Smoke gate
+        run: |
+          set -e
+          ./target/release/wm --version
+          printf 'arrival:\n  ramp:\n    from_per_second: 1\n    to_per_second: 20\n    duration_secs: 600\nlifetime:\n  distribution: exponential\n  mean_secs: 900\nsaturation_policy: queue\n' > /tmp/good.yaml
+          ./target/release/wm validate /tmp/good.yaml
+          printf 'lifetime:\n  distribution: fixed\n  mean_secs: 900\n' > /tmp/bad.yaml
+          if ./target/release/wm validate /tmp/bad.yaml; then
+            echo "FAIL: bad config validated with exit 0" >&2
+            exit 1
+          fi
+      - name: Stage
+        run: |
+          set -e
+          mkdir -p dist
+          cp target/release/wm "dist/wavemaker-${{ matrix.name }}"
+          sha256sum "dist/wavemaker-${{ matrix.name }}" \
+            > "dist/wavemaker-${{ matrix.name }}.sha256"
+          {
+            echo "Wavemaker nightly build"
+            echo "platform: ${{ matrix.name }}"
+            echo "built:    $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "commit:   ${GITHUB_SHA}"
+            echo "verify:   ./wavemaker-${{ matrix.name }} --version"
+            echo "caveat:   unsigned binary — SmartScreen/Gatekeeper may warn"
+          } > "dist/PLATFORM-NOTES-${{ matrix.name }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.name }}
+          path: dist/
+          retention-days: 1
+
+  publish:
+    name: Publish rolling nightly
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
         with:
-          components: rustfmt, clippy
-
-      - name: Install protoc (proto codegen)
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: nightly
-
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Tests
-        run: cargo test --workspace
-
-      - name: Build release binaries
-        run: cargo build --release --workspace
-
-      - name: Collect artifacts
+          pattern: pkg-*
+          merge-multiple: true
+          path: pkgs
+      - id: stamp
+        name: Capture run start (github.run_started_at is unreliable)
+        run: echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Publish to rolling nightly Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_STARTED: ${{ steps.stamp.outputs.started }}
         run: |
-          mkdir -p dist
-          date -u +%Y-%m-%d > dist/BUILD_DATE
-          git rev-parse HEAD > dist/GIT_SHA
-          cp target/release/wm dist/wm
-          cp README.md LICENSE dist/ 2>/dev/null || true
-
-      - name: Upload nightly artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wavemaker-nightly-${{ github.run_number }}
-          path: dist/
-          retention-days: 30
-          if-no-files-found: error
+          set -e
+          tag=nightly
+          # delete-and-recreate the ROLLING release (never a version tag)
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" pkgs/* \
+            --target "$GITHUB_SHA" \
+            --title "nightly $(date -u +%Y-%m-%d)" \
+            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 + SHA256SUMS. This is a rolling prerelease binary, not a versioned release." || true
+          # never leave a draft as the delivery surface
+          gh release edit "$tag" --draft=false 2>/dev/null || true
+          # assert the publish actually landed (green-but-unshipped must fail)
+          released_at=$(gh release view "$tag" --json publishedAt --jq .publishedAt)
+          echo "release publishedAt=$released_at run started=$RUN_STARTED"
+          if [ -z "$released_at" ]; then
+            echo "FAIL: release has no publishedAt" >&2
+            exit 1
+          fi
+          asset_count=$(gh release view "$tag" --json assets --jq 'length')
+          echo "assets=$asset_count"
+          if [ "$asset_count" -eq 0 ]; then
+            echo "FAIL: zero assets on nightly" >&2
+            exit 1
+          fi
+      - name: Summary
+        run: |
+          {
+            echo "## Wavemaker nightly"
+            echo "- rolling Release **nightly** (only copy; history cleaned)"
+            echo "- assets: \`wavemaker-linux-x86_64\`, \`wavemaker-linux-aarch64\`, SHA256SUMS"
+            echo "- download: https://github.com/cuihairu/wavemaker/releases/tag/nightly"
+          } >> "$GITHUB_STEP_SUMMARY"

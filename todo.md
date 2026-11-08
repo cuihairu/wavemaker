@@ -15,7 +15,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [ ] WM-0009: Verify that the KBEngine Bridge can execute commands safely in the engine scripting context. *(2026-11-09 静态闭合：§8 清单 8/8 项静态验证完成（S1–S8，docs/spec/kbengine-api-audit.md §8.1，基线 fork 3082ab50）——单线程、阻塞影响面、异常吞噬、telnet 无 GIL 竞争、ScriptID 复用、onInit 单次、bots 映射快照、addBots 节拍（推翻 bots.h 注释）全部有 file:line 证据；Phase 2 实现约束已导出（§8.3）。残留 RT2/RT3 属运行时，BLOCKED：Bridge 未实现（Phase 2 WM-0201 起）且本机无运行中的 bots 进程/集群；Bridge 落地时按 §8.3 约束实现并复测)*
 - [ ] WM-0010: Measure KBEngine callback scheduling granularity and Bridge queue latency. *(静态部分已闭合：粒度=1/gameUpdateHertz 默认 100ms 量化下界（audit §3）；addBots 到达精度上界≈1s 批+gameTick（§8.1 S8）。实测（RT1/RT4）BLOCKED：需运行中的 KBEngine 集群+bots 进程，本机 kbengine-build 仅存构建产物无部署、无 Bridge 被测对象；不虚标数字)*
 - [x] WM-0011: Build a minimal Rust Worker timer benchmark. *(crates/wm-core/benches/timer_scheduler.rs (criterion); baseline results in docs/benchmarks/timer-benchmark.md — load-sensitive, relative comparisons only)*
-- [ ] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management.
+- [x] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management. *(ADR-008（docs/adr/ADR-008-v1-dashboard-scope.md，Accepted 2026-11-09）：v1 不做常驻 Dashboard、不做多用户——交付面=nightly CLI+报告工件+CLI 所需最小 REST/gRPC；单操作员信任模型；Phase 6 不随 v1 启动，前置=WM-0600 形态决策；报告含 qps/tps 曲线（WM-0417 口径）即 v1 可视化替代)*
 - [x] WM-0013: Freeze Protobuf package names, version compatibility policy, and error code conventions. *(docs/spec/protobuf-conventions.md; error-code skeleton, field freeze in Phase 1 WM-0103)*
 - [ ] WM-0014: Clarify the persistence boundary for Swell data.
 

@@ -17,7 +17,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-0011: Build a minimal Rust Worker timer benchmark. *(crates/wm-core/benches/timer_scheduler.rs (criterion); baseline results in docs/benchmarks/timer-benchmark.md — load-sensitive, relative comparisons only)*
 - [x] WM-0012: Decide whether v1 needs a resident Dashboard and multi-user management. *(ADR-008（docs/adr/ADR-008-v1-dashboard-scope.md，Accepted 2026-11-09）：v1 不做常驻 Dashboard、不做多用户——交付面=nightly CLI+报告工件+CLI 所需最小 REST/gRPC；单操作员信任模型；Phase 6 不随 v1 启动，前置=WM-0600 形态决策；报告含 qps/tps 曲线（WM-0417 口径）即 v1 可视化替代)*
 - [x] WM-0013: Freeze Protobuf package names, version compatibility policy, and error code conventions. *(docs/spec/protobuf-conventions.md; error-code skeleton, field freeze in Phase 1 WM-0103)*
-- [ ] WM-0014: Clarify the persistence boundary for Swell data.
+- [x] WM-0014: Clarify the persistence boundary for Swell data. *(docs/spec/swell-persistence.md（2026-11-09 冻结）：四类数据责任表——metadata/timeline 归 Wavemaker（SwellStore：原子重写+追加 JSONL+路径段校验）、evidence 归 Provider 写（目录约定预创建）、Basin 时序归外部 Provider（报告只引用）、派生报告工件不计入边界；明确不落盘项：逐请求明细（HDR 为持久化粒度）、Worker 运行时指标、计划文件（仅存 spectrum_path 引用）；与 wm-core::store 11 tests 逐条对齐)*
 
 ## Phase 1: Protocol and Minimal Control Plane
 

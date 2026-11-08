@@ -24,7 +24,7 @@ v1 交付两种 Execution Backend，均实现统一的 `ExecutionBackend` 概念
 | Mode | 含义（计划书 §6.6 原文） | Backend 模型映射 |
 |---|---|---|
 | Mode A | 引擎托管 Bot；Wavemaker 通过 Bridge 控制和观测原生 Bot | Engine Bot Backend（v1 落地为 KBEngine adapter） |
-| Mode B | Wavemaker 管理执行器，但复用引擎提供的部分客户端能力；具体边界按现有架构定义，不得假设拥有 socket | **待原始决策文档确认**；方向上归入 Engine Bot Backend 的能力变体（Bridge 声明更细粒度能力），在原始 Mode B 定义确认前不冻结 |
+| Mode B | Wavemaker 管理执行器，但复用引擎提供的部分客户端能力；具体边界按现有架构定义，不得假设拥有 socket | **定义已冻结（WM-0001，docs/architecture.md「Mode A/B/C Definitions」）**：socket 归引擎 client 库、执行器进程归 Wavemaker，控制粒度为逐会话。v1 不实现；实现前需单独 ADR 显式声明能力边界 |
 | Mode C | Wavemaker Native Runtime 自己持有连接和协议执行 | Native Runtime Backend |
 
 三种模式不是同一套 Actor 的不同编译选项，而是不同的执行后端/接入能力组合（§6.6）。若后续重新定义 Mode，需单独记录 ADR。
@@ -49,4 +49,4 @@ Failed -> Recovering -> Handshaking
 - 混合执行必须在报告中分开呈现 Backend 结果，记录每种 Backend 的能力和调度精度，不把不同客户端实现的结果默认视为严格等价（§4.4）。
 - 容器化与桥接正交：Supervisor 管进程/容器生命周期，Bridge 管控制/事件/指标交换（§0.1.5）。v1 只要求 NativeProcessLauncher（§7.1）。
 - 第三方 Backend 后续允许加入，但必须遵守统一协议与能力模型（§2.2）。
-- Mode B 映射未冻结；在原始架构文档确认前，任何实现不得宣称覆盖 Mode B 完整语义（WM-0001 保持未勾）。
+- Mode B 定义已冻结在 `docs/architecture.md`「Mode A/B/C Definitions」（WM-0001，2026-11-09）：引擎 client 库持有 socket、Wavemaker 持有执行器进程；v1 不实现，任何实现前必须以单独 ADR 声明能力边界，不得宣称覆盖未兑现的观测语义。

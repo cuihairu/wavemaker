@@ -4,7 +4,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 0: Semantic Closure and Technical Verification
 
-- [ ] WM-0001: Pin down the precise definitions of Mode A/B/C in the original architecture document.
+- [x] WM-0001: Pin down the precise definitions of Mode A/B/C in the original architecture document. *(2026-11-09 冻结于 docs/architecture.md「Mode A/B/C Definitions」+ docs/zh/architecture.md 1.4 节镜像：以「谁建 Bot / 谁持 socket / 控制观测粒度」三问钉死三模式；Mode A 能力主张引用 docs/spec/kbengine-api-audit.md 的 file:line 证据（addBots 批次累加无单控 bots.cpp:344-388；KBEngine.bots 只读映射 pybots.cpp:16-113）；原始架构文档不在本地，定义以计划书 §6.6 + 已审计源码事实为准，若原始文档重现以新 ADR 调和；ADR-005 D2 的 Mode B「待确认」行已更新为已冻结、v1 不实现、实现前需单独 ADR)*
 - [x] WM-0002: Define the domain model for Swell, Spectrum, Basin, Backend, Worker, Actor. *(docs/glossary.md)*
 - [x] WM-0003: Close the arrival / concurrency / lifetime semantics. *(docs/spec/spectrum-semantics.md)*
 - [x] WM-0004: Define saturation policies. *(docs/spec/spectrum-semantics.md §5)*

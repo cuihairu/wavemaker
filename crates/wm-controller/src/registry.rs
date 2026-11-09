@@ -44,7 +44,9 @@ pub enum WorkerState {
 }
 
 /// What a Worker declares about itself at registration (§12.1).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+// PartialEq only: the declared capacity carries f64 dimensions, so Eq
+// is not derivable.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkerRegistration {
     pub worker_id: String,
     pub protocol_version: u32,
@@ -57,9 +59,14 @@ pub struct WorkerRegistration {
     /// Capabilities such as exact_arrival — carried verbatim, the
     /// registry does not interpret them.
     pub capabilities: Vec<String>,
+    /// Self-declared resource envelope (distributed.md §Worker/Backend
+    /// Registration); `None` = never declared, which stays distinct
+    /// from a declaration of zeros.
+    #[serde(default)]
+    pub resource_capacity: Option<crate::capacity::ResourceCapacity>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkerRecord {
     pub registration: WorkerRegistration,
     pub state: WorkerState,
@@ -273,6 +280,7 @@ mod tests {
             engine_version: "kbengine-1.2".into(),
             runtime_version: "0.1".into(),
             capabilities: vec!["exact_arrival".into()],
+            resource_capacity: None,
         }
     }
 
@@ -325,6 +333,28 @@ mod tests {
         );
         assert_eq!(record.state, WorkerState::Online);
         assert_eq!(record.last_heartbeat_unix_s, None);
+        // No declaration in the handshake → capacity stays unknown.
+        assert!(record.registration.resource_capacity.is_none());
+    }
+
+    #[test]
+    fn declared_capacity_is_stored_verbatim_never_interpreted() {
+        let registry = WorkerRegistry::new(1000);
+        let mut handshake = registration("w1");
+        handshake.resource_capacity = Some(crate::capacity::ResourceCapacity {
+            bot_slots: Some(500),
+            extra: std::collections::BTreeMap::from([("zone".into(), "a".into())]),
+            ..Default::default()
+        });
+        registry.register(handshake).expect("accept");
+        let record = registry.worker("w1").expect("record");
+        let capacity = record.registration.resource_capacity.expect("declared");
+        assert_eq!(capacity.bot_slots, Some(500));
+        assert_eq!(capacity.extra.get("zone").map(String::as_str), Some("a"));
+        assert!(
+            capacity.memory_mib.is_none(),
+            "undeclared dimensions stay unknown"
+        );
     }
 
     #[test]

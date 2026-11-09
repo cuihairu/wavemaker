@@ -110,6 +110,10 @@ pub struct BackendRecord {
     /// Allocation hint, stored verbatim — D1: illustrative only; the
     /// deterministic plan expansion (WM-0504) is the real allocator.
     pub weight: f64,
+    /// Latest self-declared resource envelope (WM-0503); `None` until
+    /// the backend declares one.
+    #[serde(default)]
+    pub capacity: Option<crate::capacity::ResourceCapacity>,
     pub state: BackendState,
     pub generation: u64,
     /// Full D3 history, in order, first entry = registration.
@@ -181,6 +185,7 @@ impl BackendRegistry {
             backend_id: backend_id.into(),
             kind,
             weight,
+            capacity: None,
             state: BackendState::Created,
             generation: 1,
             transitions: vec![BackendTransition {
@@ -237,6 +242,24 @@ impl BackendRegistry {
         record.state = to;
         record.transitions.push(transition.clone());
         Ok(transition)
+    }
+
+    /// Store a (re-)declared resource envelope, verbatim. This is a
+    /// declaration update, NOT a D3 state change — the generation does
+    /// not move. `false` = unknown backend.
+    pub fn declare_capacity(
+        &self,
+        backend_id: &str,
+        capacity: crate::capacity::ResourceCapacity,
+    ) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        match inner.get_mut(backend_id) {
+            Some(record) => {
+                record.capacity = Some(capacity);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn backend(&self, backend_id: &str) -> Option<BackendRecord> {
@@ -472,6 +495,45 @@ mod tests {
             outcome,
             Err(BackendRegistryError::IllegalTransition { from: BackendState::Stopped, .. })
         ));
+    }
+
+    #[test]
+    fn capacity_declaration_is_verbatim_and_never_a_state_change() {
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        assert!(
+            registry.backend("kb-conf").expect("record").capacity.is_none(),
+            "before any declaration, capacity is unknown — not zero"
+        );
+        let declared = crate::capacity::ResourceCapacity {
+            bot_slots: Some(500),
+            ..Default::default()
+        };
+        assert!(registry.declare_capacity("kb-conf", declared.clone()));
+        let record = registry.backend("kb-conf").expect("record");
+        assert_eq!(record.capacity, Some(declared));
+        // A declaration is not a D3 transition: state and generation
+        // stay put, and the transition history is untouched.
+        assert_eq!(record.state, BackendState::Created);
+        assert_eq!(record.generation, 1);
+        assert_eq!(record.transitions.len(), 1);
+        // Re-declaration replaces (latest wins), still verbatim.
+        let tighter = crate::capacity::ResourceCapacity {
+            bot_slots: Some(0),
+            ..Default::default()
+        };
+        assert!(registry.declare_capacity("kb-conf", tighter));
+        assert_eq!(
+            registry.backend("kb-conf").expect("record").capacity,
+            Some(crate::capacity::ResourceCapacity {
+                bot_slots: Some(0),
+                ..Default::default()
+            }),
+            "explicit zero is a real claim and must not be dropped"
+        );
+        assert!(!registry.declare_capacity("ghost", Default::default()));
     }
 
     #[test]

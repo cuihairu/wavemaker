@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 pub mod alignment;
 pub mod assertion_scheduler;
 pub mod assertions;
+pub mod assertion_transport;
 pub mod baseline;
 pub mod catalog;
 pub mod correlation;
@@ -57,6 +58,7 @@ pub use assertion_scheduler::{
     AssertionOutcome, AssertionScheduler, AssertionSchedulerError, ProviderSet,
     RecoveryWindow, ScenarioWindow,
 };
+pub use assertion_transport::{AssertionHttpTransport, HttpAssertionProvider, TcpPostTransport};
 pub use baseline::{
     degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,
     BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,

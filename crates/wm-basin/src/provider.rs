@@ -111,14 +111,14 @@ pub struct HttpResponse {
 // --- Prometheus HTTP API -------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedUrl {
-    host: String,
-    port: u16,
+pub(crate) struct ParsedUrl {
+    pub(crate) host: String,
+    pub(crate) port: u16,
     /// Path incl. leading '/', without scheme/host; empty string = "/".
-    path: String,
+    pub(crate) path: String,
 }
 
-fn parse_url(url: &str) -> Result<ParsedUrl, ProviderError> {
+pub(crate) fn parse_url(url: &str) -> Result<ParsedUrl, ProviderError> {
     let (scheme, rest) = url
         .split_once("://")
         .ok_or_else(|| ProviderError::BadResponse(format!("malformed url {url}")))?;
@@ -407,7 +407,7 @@ impl fmt::Debug for TcpHttpTransport {
     }
 }
 
-fn decode_http_response(raw: &[u8]) -> Result<HttpResponse, ProviderError> {
+pub(crate) fn decode_http_response(raw: &[u8]) -> Result<HttpResponse, ProviderError> {
     let header_end = find_header_end(raw).ok_or_else(|| {
         ProviderError::BadResponse("no http header terminator found".to_string())
     })?;

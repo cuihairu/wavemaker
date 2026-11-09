@@ -25,6 +25,7 @@ pub mod baseline;
 pub mod catalog;
 pub mod correlation;
 pub mod environment;
+pub mod generator;
 pub mod mapping;
 pub mod observability;
 pub mod overhead;
@@ -42,6 +43,10 @@ pub use baseline::{
 };
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
 pub use correlation::{CorrelationContext, TimeRange};
+pub use generator::{
+    aggregate, GeneratorAggregate, SaturationSignal, SaturationThresholds,
+    WorkerSnapshot,
+};
 pub use mapping::{MappingEntry, MappingError, MetricMapping};
 pub use provider::{
     HttpTransport, MetricProvider, PrometheusProvider, ProviderError,

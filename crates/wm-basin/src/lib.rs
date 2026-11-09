@@ -27,6 +27,7 @@ pub mod environment;
 pub mod mapping;
 pub mod observability;
 pub mod provider;
+pub mod quality;
 pub mod scheduler;
 pub mod timestamps;
 pub mod topology;
@@ -45,6 +46,10 @@ pub use scheduler::{
 pub use timestamps::{
     compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata,
     MissingInterval, TimestampError, TimestampRecord,
+};
+pub use quality::{
+    detect_delayed_samples, detect_missing_windows, quality_report,
+    QualityFinding, QualityReport,
 };
 pub use environment::Environment;
 pub use observability::{

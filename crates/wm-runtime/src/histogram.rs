@@ -26,22 +26,28 @@ pub struct HistogramSummary {
 #[derive(Debug, Clone)]
 pub struct HistogramRecorder {
     hist: Histogram,
+    /// Highest trackable value (the frozen 1 h ceiling), used to clamp
+    /// out-of-range samples instead of dropping them.
+    ceiling_ns: u64,
 }
 
 impl HistogramRecorder {
     /// Recorder over `[1, 3.6e12]` ns with 2 significant figures.
     pub fn new() -> Result<Self, HdrError> {
+        let params = HdrParameters::frozen_v1();
+        let ceiling_ns = params.highest_trackable_value as u64;
         Ok(Self {
-            hist: Histogram::new(HdrParameters::frozen_v1())?,
+            hist: Histogram::new(params)?,
+            ceiling_ns,
         })
     }
 
-    /// Record one latency sample (ns). Values outside the trackable range are
-    /// ignored (an overflow/underflow is not a load-run failure).
+    /// Record one latency sample (ns). A sample above the trackable ceiling
+    /// is clamped to it rather than dropped: counts and the tail stay exact
+    /// (a >1 h latency is reported as ≥ the 1 h ceiling, never lost).
     pub fn record(&mut self, value_ns: u64) {
-        // Clamp to the tracked range rather than dropping the sample: the
-        // histogram records what it can and ignores the rest.
-        let _ = self.hist.record_value(value_ns as i64);
+        let clamped = value_ns.min(self.ceiling_ns);
+        let _ = self.hist.record_value(clamped as i64);
     }
 
     pub fn total_count(&self) -> u64 {
@@ -83,8 +89,11 @@ impl HistogramRecorder {
 
     /// Decode a V2 blob produced by [`HistogramRecorder::encode_v2_blob`].
     pub fn from_v2_blob(blob: &[u8]) -> Result<Self, HdrError> {
+        let params = HdrParameters::frozen_v1();
+        let ceiling_ns = params.highest_trackable_value as u64;
         Ok(Self {
             hist: Histogram::decode_v2_blob(blob)?,
+            ceiling_ns,
         })
     }
 }
@@ -166,5 +175,27 @@ mod tests {
         assert_eq!(s.total_count, 0);
         assert_eq!(s.min_ns, 0);
         assert_eq!(s.max_ns, 0);
+    }
+
+    /// A sample above the 1 h ceiling must be recorded at the ceiling, not
+    /// dropped: dropping it would undercount and hide the long tail.
+    #[test]
+    fn above_ceiling_samples_are_clamped_not_dropped() {
+        let mut rec = HistogramRecorder::new().unwrap();
+        rec.record(1_000);
+        rec.record(4 * 3_600_000_000_000u64); // 4 h, far above the ceiling
+        let s = rec.summary();
+        assert_eq!(
+            s.total_count, 2,
+            "out-of-range sample recorded, not silently dropped"
+        );
+        // HDR reports the top bucket's equivalent bounds, so the clamped
+        // sample lands at or above the 1 h ceiling — never below it.
+        assert!(
+            s.max_ns >= 3_600_000_000_000,
+            "clamped to the frozen ceiling, got {}",
+            s.max_ns
+        );
+        assert_eq!(s.p100_ns, s.max_ns);
     }
 }

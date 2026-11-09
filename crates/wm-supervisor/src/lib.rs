@@ -15,6 +15,8 @@ use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 
+pub mod kbengine;
+
 #[derive(Debug, Error)]
 pub enum SupervisorError {
     #[error("process not started")]

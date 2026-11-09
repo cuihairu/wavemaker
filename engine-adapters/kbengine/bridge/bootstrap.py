@@ -42,6 +42,7 @@ from .command_queue import CommandQueue
 from .commands import CommandDispatcher, parse_command
 from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
+from .plans import PlanState
 
 
 class BootstrapConfig(object):
@@ -116,6 +117,9 @@ class Bootstrap(object):
         self._dispatcher = CommandDispatcher(
             self._send_command_result, lambda: self._handshake_generation
         )
+        self._plans = PlanState(config.swell_id, SCHEDULING_RESOLUTION_MS)
+        self._dispatcher.set_handler("apply_plan", self._on_apply_plan)
+        self._dispatcher.set_handler("start", self._on_start)
 
     @property
     def state(self):
@@ -244,6 +248,9 @@ class Bootstrap(object):
     def _on_pump(self):
         try:
             self.drain_command_queue()
+            # Batch plan execution rides the same pump tick: due batches
+            # become one addBots call each, on the scripting thread (S1).
+            self.execute_due_batches()
         except Exception:
             # S3: a script exception is printed and swallowed by the engine;
             # the bridge state machine must not depend on a callback having
@@ -276,6 +283,35 @@ class Bootstrap(object):
         # so there is nothing further to do here.
         if self._client is not None:
             self._client.send_message(result)
+
+    # -- ApplyPlan / Start (WM-0207) ----------------------------------------
+
+    def _on_apply_plan(self, payload, operation_id):
+        # Structured (code, reason, detail) outcome -> dispatcher envelopes
+        # it; validation and digest idempotency live in PlanState.
+        return self._plans.apply(payload)
+
+    def _on_start(self, payload, operation_id):
+        # Start idempotency keys on operation_id (docs/bridge.md §Command
+        # Semantics); the payload carries no Start-relevant fields.
+        return self._plans.start(operation_id)
+
+    def execute_due_batches(self):
+        """Fire one addBots per due batch on the scripting thread (the pump
+        is the only caller). Returns the fired bot counts. addBots returns
+        None with no failure feedback (audit §1/D1) — a failed call is
+        invisible here, which the Supervisor sees as a bot-count shortfall
+        in the WM-0208 collection instead."""
+        fired = []
+        for count in self._plans.due_batches():
+            self._engine.add_bots(count)
+            fired.append(count)
+        return fired
+
+    @property
+    def plans(self):
+        """Plan state (accepted digest, running start id) for tests/status."""
+        return self._plans
 
     def _handle_command(self, command):
         ack = parse_handshake_ack(command)

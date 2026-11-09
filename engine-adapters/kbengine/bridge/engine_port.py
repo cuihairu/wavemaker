@@ -1,6 +1,6 @@
 """Thin, testable port over the KBEngine scripting module.
 
-The bootstrap touches exactly two engine APIs (audit §3/§4):
+The bootstrap touches exactly three engine APIs (audit §1/§3/§4):
 
     KBEngine.callback(delay_seconds, fn) -> callback_id
         Exactly two arguments; single-shot; the engine forwards no extra args
@@ -10,9 +10,14 @@ The bootstrap touches exactly two engine APIs (audit §3/§4):
         Exactly one int argument; silently succeeds on unknown or already
         fired ids (no exception, no feedback that a race happened).
 
-Nothing else in the engine scripting surface is used here; bot/entity APIs
-live in their own collectors (WM-0208+). Wrapping the module keeps the whole
-adapter importable and testable without a KBEngine runtime.
+    KBEngine.addBots(totalCount)
+        The 1-arg form (1 or 3 args accepted, never 2 — TypeError otherwise).
+        Cumulative creation target paced by the engine's own gate (S8);
+        returns None with no failure feedback (audit §1/D1).
+
+Bot/entity inspection APIs live in their own collectors (WM-0208+). Wrapping
+the module keeps the whole adapter importable and testable without a
+KBEngine runtime.
 """
 
 
@@ -37,6 +42,10 @@ class EnginePort(object):
         """Cancel a registered callback id; silent for unknown/fired ids."""
         self._kb.cancelCallback(callback_id)
 
+    def add_bots(self, total_count):
+        """Queue `total_count` more bot creations (cumulative, audit §1)."""
+        return self._kb.addBots(total_count)
+
 
 class FakeEngine(object):
     """Scriptable stand-in for `KBEngine` in unit tests.
@@ -50,6 +59,8 @@ class FakeEngine(object):
         self._next_id = 1
         self.scheduled = {}
         self.cancelled = []
+        self.add_bots_calls = []
+        self.bots_total = 0
 
     def callback(self, delay_seconds, fn):
         cid = self._next_id
@@ -60,6 +71,13 @@ class FakeEngine(object):
     def cancelCallback(self, cid):
         self.cancelled.append(cid)
         self.scheduled.pop(cid, None)
+
+    def addBots(self, total_count):
+        """Cumulative creation target, mirroring the engine semantics
+        (audit §1): records each call and the running total."""
+        self.add_bots_calls.append(total_count)
+        self.bots_total += total_count
+        return None
 
     def fire(self, cid):
         """Invoke the scheduled callback `cid` exactly once (single-shot)."""

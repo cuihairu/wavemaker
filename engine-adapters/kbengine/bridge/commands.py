@@ -99,10 +99,19 @@ class CommandDispatcher(object):
     One instance per Bridge, constructed and used only on the scripting
     thread (the pump is the sole consumer) — no locking needed (S1).
 
-    `handlers` maps command_name -> callable(payload) -> None. Handlers run
-    inline on the scripting thread and must stay cheap (they block the
-    engine tick); anything heavier belongs in the engine-callback work the
-    handler itself schedules.
+    `handlers` maps command_name -> callable(payload, operation_id).
+    Handlers run inline on the scripting thread and must stay cheap (they
+    block the engine tick); anything heavier belongs in the engine-callback
+    work the handler itself schedules. `operation_id` is passed because
+    Start/Drain idempotency keys on it (docs/bridge.md §Command Semantics).
+
+    Handler outcomes:
+      * None                       -> OK result;
+      * (code, reason_code, detail) -> that structured non-OK result
+        (stable codes from the RESULT_* vocabulary, protobuf-conventions
+        §3.2 — a structured rejection is not an INTERNAL error);
+      * raised exception           -> INTERNAL `handler_error` (reported,
+        never raised into the pump, S3).
     """
 
     def __init__(self, send_result, generation_getter):
@@ -146,9 +155,14 @@ class CommandDispatcher(object):
                 )
             else:
                 try:
-                    handler(payload)
-                    result = build_command_result(
-                        operation_id, assigned, RESULT_OK)
+                    outcome = handler(payload, operation_id)
+                    if outcome is None:
+                        result = build_command_result(
+                            operation_id, assigned, RESULT_OK)
+                    else:
+                        code, reason_code, detail = outcome
+                        result = build_command_result(
+                            operation_id, assigned, code, reason_code, detail)
                 except Exception as exc:  # reported, never raised (S3)
                     result = build_command_result(
                         operation_id, assigned, RESULT_INTERNAL,

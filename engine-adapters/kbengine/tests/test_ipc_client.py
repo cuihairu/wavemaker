@@ -781,7 +781,7 @@ def test_stale_generation_command_is_rejected_and_fresh_one_accepted():
     server = LoopbackServer.unix()
     engine, b = make_bootstrap(ipc=server.address)
     seen = []
-    b.set_command_handler("start", seen.append)
+    b.set_command_handler("start", lambda p, op: seen.append(p))
     try:
         complete_handshake(server, engine, b, generation=42)
         server.send_message(command(op="old", generation=7))
@@ -824,7 +824,7 @@ def test_handler_runs_on_scripting_thread_and_reports_errors():
     server = LoopbackServer.unix()
     engine, b = make_bootstrap(ipc=server.address)
     marker = {}
-    b.set_command_handler("start", lambda p: marker.update(
+    b.set_command_handler("start", lambda p, op: marker.update(
         payload=p, thread=threading.get_ident()))
     try:
         complete_handshake(server, engine, b)
@@ -837,7 +837,7 @@ def test_handler_runs_on_scripting_thread_and_reports_errors():
 
         # A raising handler becomes INTERNAL, never an escaped exception;
         # the pump rearms and the next command still dispatches.
-        b.set_command_handler("start", lambda p: 1 / 0)
+        b.set_command_handler("start", lambda p, op: 1 / 0)
         server.send_message(command(op="op-2"))
         wait_command(b, engine)
         result = server.recv_frame()
@@ -846,11 +846,121 @@ def test_handler_runs_on_scripting_thread_and_reports_errors():
         assert result["result"]["reason_code"] == "handler_error"
         assert "ZeroDivisionError" in result["result"]["detail"]
 
-        b.set_command_handler("start", lambda p: None)
+        b.set_command_handler("start", lambda p, op: None)
         server.send_message(command(op="op-3"))
         wait_command(b, engine)
         assert server.recv_frame()["result"]["code"] == "OK"
         assert len(engine.scheduled) == 1, "pump survived the handler error"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+# -- ApplyPlan / Start mapping (WM-0207) ------------------------------------
+
+VALID_PLAN = {
+    "swell_id": "sw-7",
+    "plan_digest": "sha256:abc",
+    "batches": [
+        {"offset_ms": 0, "bot_count": 10},
+        {"offset_ms": 300, "bot_count": 20},
+    ],
+}
+
+
+def test_apply_plan_accepts_and_replays_over_the_wire():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="apply-1", name="apply_plan", payload=VALID_PLAN))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "OK"
+        assert b.plans.state == "plan_accepted"
+        assert b.plans.plan_digest == "sha256:abc"
+
+        # Idempotent replay for the same digest (docs/bridge.md).
+        server.send_message(command(
+            op="apply-2", name="apply_plan", payload=VALID_PLAN))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+
+        # Conflicting digest is refused: the frozen shard is not replaced.
+        conflicting = dict(VALID_PLAN, plan_digest="sha256:zzz")
+        server.send_message(command(
+            op="apply-3", name="apply_plan", payload=conflicting))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "conflicting_plan"
+        assert b.plans.plan_digest == "sha256:abc"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_malformed_plan_payload_is_invalid_argument_not_internal():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="apply-x", name="apply_plan",
+            payload={"swell_id": "sw-7", "plan_digest": "sha256:x",
+                     "batches": []}))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "INVALID_ARGUMENT"
+        assert result["result"]["reason_code"] == "batches_missing"
+        assert b.plans.state == "idle", "rejected plan stores nothing"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_start_executes_the_mapped_batches_through_addbots():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(name="start"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "plan_not_accepted"
+
+        server.send_message(command(
+            op="apply-1", name="apply_plan", payload=VALID_PLAN))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+
+        server.send_message(command(op="start-1", name="start"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+
+        # Bucket 0 fires on the pump tick that processed start (same-tick
+        # due_batches); the explicit second tick adds nothing. Bucket 3
+        # (300 ms) timing is covered by the unit tests with a fake clock.
+        assert engine.add_bots_calls == [10]
+        assert engine.bots_total == 10
+        engine.fire(b.pump_id)
+        assert engine.add_bots_calls == [10], "one addBots per due batch"
+
+        # Same operation_id replays OK without re-firing the schedule.
+        server.send_message(command(op="start-1", name="start"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        engine.fire(b.pump_id)
+        assert engine.add_bots_calls == [10], "no duplicate addBots"
+
+        # A different operation_id while running is refused.
+        server.send_message(command(op="start-2", name="start"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "already_running"
     finally:
         b.on_finish()
         server.close()

@@ -231,6 +231,11 @@ def test_client_roundtrip_over_unix_socket():
             threading.Event().wait(0.01)
         assert inbound.drain() == [{"command_name": "ping"}]
 
+        # Sender bumps `sent` after sendall returns — poll rather than race.
+        deadline = 200
+        while client.stats()["sent"] < 1 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
         stats = client.stats()
         assert stats["sent"] == 1
         assert stats["received"] == 1
@@ -329,21 +334,51 @@ def test_inbound_overflow_drops_and_counts():
         server.close()
 
 
+class GatedOutbound(OutboundQueue):
+    """OutboundQueue whose first drain parks until `release()`.
+
+    The sender thread starts draining the moment `connect()` returns, so a
+    plain queue lets the sender race the test's puts and the overflow never
+    deterministically happens. Gating the first drain makes the queueing
+    sequence deterministic; release() then lets the sender prove the two
+    queued messages actually go out.
+    """
+
+    def __init__(self, max_size):
+        OutboundQueue.__init__(self, max_size)
+        self._gate = threading.Event()
+        self._drains = 0
+
+    def release(self):
+        self._gate.set()
+
+    def drain(self, timeout=0.05):
+        self._drains += 1
+        if self._drains == 1:
+            self._gate.wait(5.0)
+        return OutboundQueue.drain(self, timeout)
+
+
 def test_outbound_overflow_drops_newest_and_counts():
     server = LoopbackServer.unix()
-    outbound = OutboundQueue(max_size=2)
+    outbound = GatedOutbound(max_size=2)
     client = make_client(server, outbound=outbound)
     try:
         assert client.connect()
-        # The sender thread races to drain, so queue exactly the overflow
-        # before the sender can pick anything up: put() itself enforces the
-        # bound, independent of the socket.
+        # Sender is parked at the gate: the bound is exercised exactly.
         assert outbound.put({"n": 1})
         assert outbound.put({"n": 2})
         assert not client.send_message({"n": 3}), "newest dropped on overflow"
         assert outbound.overflow_count() == 1
-        # drain bypasses the bound (sender side always takes everything).
-        assert len(outbound.drain(0.0)) == 2
+        outbound.release()
+        # The queued pair really goes out; the dropped one never does.
+        assert server.recv_frame() == {"n": 1}
+        assert server.recv_frame() == {"n": 2}
+        deadline = 200
+        while client.stats()["sent"] < 2 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        assert client.stats()["sent"] == 2
     finally:
         client.close()
         server.close()
@@ -365,6 +400,12 @@ def test_send_message_counts_unserialisable_and_keeps_running():
         assert client.is_connected, "one bad message must not kill the link"
         assert client.send_message({"ok": True})
         assert server.recv_frame() == {"ok": True}
+        # The sender counts `sent` after sendall returns, which can land just
+        # after the server already has the bytes: poll, don't race.
+        deadline = 200
+        while client.stats()["sent"] < 1 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
         assert client.stats()["sent"] == 1
     finally:
         client.close()
@@ -483,7 +524,13 @@ def test_bootstrap_wires_ipc_client_lifecycle():
             threading.Event().wait(0.01)
         assert b.queue.pending() == 1
 
+        # Poll: the sender's `sent` bump can lag the server's frame receipt.
+        deadline = 200
         stats = b.ipc_stats()
+        while (stats["sent"] < 1 or stats["received"] < 1) and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+            stats = b.ipc_stats()
         assert stats["sent"] == 1 and stats["received"] == 1
 
         # on_finish is synchronous and tears the client down inline.

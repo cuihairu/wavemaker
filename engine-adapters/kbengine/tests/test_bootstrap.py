@@ -65,6 +65,54 @@ def test_enqueue_from_any_thread_never_calls_engine():
     assert b.queue.pending() == 1
 
 
+def test_concurrent_producers_execute_exactly_once_on_pump_thread():
+    """WM-0009 runtime evidence: commands arriving concurrently from many
+    IPC-side threads execute exactly once, in the single pump (scripting
+    thread), and the pump survives the burst with its single-shot re-arm
+    discipline intact (§8.3 #1; S1 makes cross-thread script calls UB)."""
+    from collections import Counter
+
+    producers = 8
+    per_producer = 50
+    engine, b = make_bootstrap()
+    b.on_init(0)
+    errors = []
+
+    def produce(tag):
+        try:
+            for i in range(per_producer):
+                assert b.queue.enqueue((tag, i)), "queue is unbounded here"
+        except Exception as exc:  # pragma: no cover - diagnostics only
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=produce, args=(tag,)) for tag in range(producers)
+    ]
+    for t in threads:
+        t.start()
+
+    # Drive the pump exactly the way the engine does: single-shot fire, the
+    # handler drains and re-arms with a fresh id. Nothing else consumes.
+    total = 0
+    deadline = 2000
+    while total < producers * per_producer and deadline:
+        deadline -= 1
+        engine.fire(b.pump_id)
+        total = len(b._events)
+    for t in threads:
+        t.join()
+
+    assert not errors, "producers never fail"
+    assert total == producers * per_producer, "pump drained everything"
+    counts = Counter(b._events)
+    assert set(counts) == {
+        (tag, i) for tag in range(producers) for i in range(per_producer)
+    }, "every command observed"
+    assert all(c == 1 for c in counts.values()), "exactly once, no duplicates"
+    assert len(engine.scheduled) == 1, "exactly one live pump callback"
+    assert engine.cancelled == [], "nothing was cancelled mid-run"
+
+
 def test_callback_exception_does_not_stop_pump():
     # S3: script exceptions are printed and swallowed; the state machine and
     # the pump must survive a failing handler.

@@ -91,12 +91,40 @@ pub enum RegistrationDecision {
     Rejected { reason: String },
 }
 
+/// The Worker registry's restart-recovery snapshot (WM-0512). Every
+/// record — including Deregistered and LostContact ones — travels, so a
+/// controller restart reconstructs the mesh composition instead of
+/// guessing it. `next_generation` travels too: without it a rejoin
+/// after restart could mint a generation that collides with a live
+/// record.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkerSnapshot {
+    /// The next generation the registry would mint. Must be >= every
+    /// recorded generation, or a post-restart registration would reuse
+    /// a generation that is already in use.
+    pub next_generation: u64,
+    /// Records ordered by worker id (stable snapshot output).
+    pub workers: Vec<WorkerRecord>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RegistryError {
     #[error("worker id must not be empty")]
     EmptyWorkerId,
     #[error("lease ttl {ttl_ms}ms is shorter than the heartbeat interval {interval_ms}ms; a worker would be declared lost before its first beat is due")]
     LeaseTtlTooShort { ttl_ms: u64, interval_ms: u64 },
+    #[error("snapshot worker {0} has an empty id")]
+    RestoreEmptyWorkerId(String),
+    #[error("snapshot worker {worker} has generation {generation}; generations start at 1")]
+    RestoreBadGeneration { worker: String, generation: u64 },
+    #[error("snapshot next_generation {next} is behind the largest recorded generation {max}; a future registration would mint a colliding generation")]
+    RestoreGenerationRegression { next: u64, max: u64 },
+    #[error("snapshot worker {worker} has an inconsistent lease state {state:?} with invalidation time {invalidated_at:?}; LostContact always carries its invalidation time and every other state carries none")]
+    RestoreInvalidLeaseState {
+        worker: String,
+        state: WorkerState,
+        invalidated_at: Option<u64>,
+    },
 }
 
 fn unix_now() -> u64 {
@@ -144,6 +172,105 @@ impl WorkerRegistry {
                 heartbeat_interval: Duration::from_millis(interval),
                 lease_ttl: Duration::from_millis(lease_ttl_ms),
                 next_generation: 0,
+            }),
+        })
+    }
+
+    /// Restart-recovery snapshot (WM-0512): the whole registry, every
+    /// state, ordered, plus the next generation to mint.
+    pub fn snapshot(&self) -> WorkerSnapshot {
+        let inner = self.inner.lock().unwrap();
+        let mut workers: Vec<WorkerRecord> = inner.workers.values().cloned().collect();
+        workers.sort_by(|a, b| a.registration.worker_id.cmp(&b.registration.worker_id));
+        WorkerSnapshot {
+            next_generation: inner.next_generation,
+            workers,
+        }
+    }
+
+    /// Reconstruct a registry from a snapshot. The lease parameters are
+    /// configuration (not registry state) and are validated as in
+    /// `new`. Every record is checked for internal consistency before
+    /// ANY is adopted — a corrupt snapshot is refused whole, never
+    /// partially applied:
+    ///
+    /// - the lease state invariant is enforced (`LostContact` always
+    ///   carries its invalidation time, every other state carries none),
+    ///   so a snapshot cannot fabricate an open admission window or a
+    ///   missing one;
+    /// - generations start at 1 and `next_generation` must be >= the
+    ///   largest recorded generation, so a post-restart registration
+    ///   can never mint a colliding generation;
+    /// - the §5.3 protocol handshake is NOT re-run — those
+    ///   registrations were already accepted, and rejecting them at
+    ///   restart would fabricate a failure that never happened.
+    ///
+    /// Restoring does NOT force Online workers to LostContact. Liveness
+    /// after downtime is a lease question, decided honestly by the
+    /// recorded last heartbeat against the TTL on the first sweep.
+    pub fn restore(
+        snapshot: WorkerSnapshot,
+        heartbeat_interval_ms: u32,
+        lease_ttl_ms: u64,
+    ) -> Result<Self, RegistryError> {
+        let interval = u64::from(heartbeat_interval_ms);
+        if lease_ttl_ms < interval {
+            return Err(RegistryError::LeaseTtlTooShort {
+                ttl_ms: lease_ttl_ms,
+                interval_ms: interval,
+            });
+        }
+        let mut max_generation = 0u64;
+        for record in &snapshot.workers {
+            if record.registration.worker_id.trim().is_empty() {
+                return Err(RegistryError::RestoreEmptyWorkerId(
+                    record.registration.worker_id.clone(),
+                ));
+            }
+            if record.generation == 0 {
+                return Err(RegistryError::RestoreBadGeneration {
+                    worker: record.registration.worker_id.clone(),
+                    generation: record.generation,
+                });
+            }
+            max_generation = max_generation.max(record.generation);
+            match record.state {
+                WorkerState::LostContact => {
+                    if record.lease_invalidated_at_unix_s.is_none() {
+                        return Err(RegistryError::RestoreInvalidLeaseState {
+                            worker: record.registration.worker_id.clone(),
+                            state: record.state,
+                            invalidated_at: record.lease_invalidated_at_unix_s,
+                        });
+                    }
+                }
+                WorkerState::Online | WorkerState::Deregistered => {
+                    if record.lease_invalidated_at_unix_s.is_some() {
+                        return Err(RegistryError::RestoreInvalidLeaseState {
+                            worker: record.registration.worker_id.clone(),
+                            state: record.state,
+                            invalidated_at: record.lease_invalidated_at_unix_s,
+                        });
+                    }
+                }
+            }
+        }
+        if snapshot.next_generation < max_generation {
+            return Err(RegistryError::RestoreGenerationRegression {
+                next: snapshot.next_generation,
+                max: max_generation,
+            });
+        }
+        let mut workers = HashMap::new();
+        for record in snapshot.workers {
+            workers.insert(record.registration.worker_id.clone(), record);
+        }
+        Ok(Self {
+            inner: Mutex::new(RegistryInner {
+                workers,
+                heartbeat_interval: Duration::from_millis(interval),
+                lease_ttl: Duration::from_millis(lease_ttl_ms),
+                next_generation: snapshot.next_generation,
             }),
         })
     }
@@ -733,5 +860,212 @@ mod tests {
             "sorted output; unknown and deregistered are both NotInMesh"
         );
         assert!(registry.admitting_workers().is_empty());
+    }
+
+    #[test]
+    fn snapshot_restore_round_trip_preserves_states_generations_and_next_generation() {
+        let registry = WorkerRegistry::new(1000, 5000).expect("lease config");
+        let generation_a = match registry.register(registration("w-a")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => generation,
+            other => panic!("unexpected {other:?}"),
+        };
+        let generation_b = match registry.register(registration("w-b")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => generation,
+            other => panic!("unexpected {other:?}"),
+        };
+        match registry.register(registration("w-c")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => {
+                assert!(generation > generation_b);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        registry.mark_lost("w-b");
+        registry.deregister("w-c");
+
+        let snapshot = registry.snapshot();
+        assert_eq!(snapshot.workers.len(), 3);
+        // next_generation is the count of every registration ever
+        // accepted, so a rejoin after restart cannot collide.
+        let next_generation = snapshot.next_generation;
+        assert!(next_generation >= 3);
+
+        let restored = WorkerRegistry::restore(snapshot, 1000, 5000).expect("valid snapshot");
+        let ids: Vec<String> = restored
+            .workers()
+            .iter()
+            .map(|record| record.registration.worker_id.clone())
+            .collect();
+        assert_eq!(ids, vec!["w-a".to_string(), "w-b".to_string(), "w-c".to_string()]);
+        let record_a = restored.worker("w-a").expect("record");
+        assert_eq!(record_a.state, WorkerState::Online);
+        assert_eq!(record_a.generation, generation_a);
+        let record_b = restored.worker("w-b").expect("record");
+        assert_eq!(record_b.state, WorkerState::LostContact);
+        assert_eq!(record_b.generation, generation_b);
+        assert!(record_b.lease_invalidated_at_unix_s.is_some());
+        let record_c = restored.worker("w-c").expect("record");
+        assert_eq!(record_c.state, WorkerState::Deregistered);
+        assert_eq!(
+            restored.heartbeat_interval(),
+            Duration::from_millis(1000),
+            "lease config comes from the caller, not the snapshot"
+        );
+        assert_eq!(restored.lease_ttl(), Duration::from_millis(5000));
+
+        // A post-restart registration mints a fresh generation — no
+        // collision with anything recorded.
+        let fresh = restored.register(registration("w-d")).expect("post-restart accept");
+        match fresh {
+            RegistrationDecision::Accepted { generation } => {
+                assert!(generation > generation_b);
+                assert!(generation > next_generation);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn restore_does_not_guess_liveness_but_the_lease_loop_reassesses_it() {
+        let registry = WorkerRegistry::new(1000, 5000).expect("lease config");
+        let generation = match registry.register(registration("w-a")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => generation,
+            other => panic!("unexpected {other:?}"),
+        };
+        registry.heartbeat("w-a", generation);
+        // The worker's last beat is far in the past; the TTL deadline is
+        // provably crossed without sleeping (as in the sweep tests).
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.workers.get_mut("w-a").expect("record");
+            record.last_heartbeat_unix_s =
+                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+        }
+        let snapshot = registry.snapshot();
+
+        let restored = WorkerRegistry::restore(snapshot, 1000, 5000).expect("valid snapshot");
+        // Restore carries the recorded state verbatim: Online is not
+        // force-flipped to LostContact at restart — that would be a
+        // guess about whether the worker is still alive.
+        assert_eq!(restored.worker("w-a").expect("record").state, WorkerState::Online);
+        // The first lease sweep re-evaluates against the RECORDED beat
+        // and the TTL: the stale worker is honestly declared lost.
+        assert_eq!(restored.sweep_expired(), vec!["w-a".to_string()]);
+        assert_eq!(restored.worker("w-a").expect("record").state, WorkerState::LostContact);
+    }
+
+    #[test]
+    fn restore_refuses_inconsistent_lease_state() {
+        // LostContact without an invalidation time: the admission-freeze
+        // gate (WM-0507) would have nothing to name.
+        let lost_without_time = WorkerSnapshot {
+            next_generation: 2,
+            workers: vec![WorkerRecord {
+                registration: registration("w-lost"),
+                state: WorkerState::LostContact,
+                generation: 1,
+                registered_at_unix_s: 1,
+                last_heartbeat_unix_s: Some(1),
+                lease_invalidated_at_unix_s: None,
+            }],
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(lost_without_time, 1000, 5000),
+            Err(RegistryError::RestoreInvalidLeaseState {
+                worker,
+                state: WorkerState::LostContact,
+                invalidated_at: None,
+            }) if worker == "w-lost"
+        ));
+        // Online carrying an invalidation time: an admission window that
+        // was never opened.
+        let online_with_time = WorkerSnapshot {
+            next_generation: 2,
+            workers: vec![WorkerRecord {
+                registration: registration("w-on"),
+                state: WorkerState::Online,
+                generation: 1,
+                registered_at_unix_s: 1,
+                last_heartbeat_unix_s: Some(1),
+                lease_invalidated_at_unix_s: Some(1),
+            }],
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(online_with_time, 1000, 5000),
+            Err(RegistryError::RestoreInvalidLeaseState {
+                state: WorkerState::Online,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restore_refuses_generation_regression_empty_id_and_zero_generation() {
+        let regression = WorkerSnapshot {
+            next_generation: 1,
+            workers: vec![WorkerRecord {
+                registration: registration("w-a"),
+                state: WorkerState::Online,
+                generation: 3,
+                registered_at_unix_s: 1,
+                last_heartbeat_unix_s: Some(1),
+                lease_invalidated_at_unix_s: None,
+            }],
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(regression, 1000, 5000),
+            Err(RegistryError::RestoreGenerationRegression { next: 1, max: 3 })
+        ));
+
+        let empty_id = WorkerSnapshot {
+            next_generation: 1,
+            workers: vec![WorkerRecord {
+                registration: registration("  "),
+                state: WorkerState::Online,
+                generation: 1,
+                registered_at_unix_s: 1,
+                last_heartbeat_unix_s: None,
+                lease_invalidated_at_unix_s: None,
+            }],
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(empty_id, 1000, 5000),
+            Err(RegistryError::RestoreEmptyWorkerId(_))
+        ));
+
+        let zero_generation = WorkerSnapshot {
+            next_generation: 1,
+            workers: vec![WorkerRecord {
+                registration: registration("w-a"),
+                state: WorkerState::Online,
+                generation: 0,
+                registered_at_unix_s: 1,
+                last_heartbeat_unix_s: None,
+                lease_invalidated_at_unix_s: None,
+            }],
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(zero_generation, 1000, 5000),
+            Err(RegistryError::RestoreBadGeneration {
+                worker,
+                generation: 0,
+            }) if worker == "w-a"
+        ));
+    }
+
+    #[test]
+    fn restore_revalidates_the_lease_configuration() {
+        let empty = WorkerSnapshot {
+            next_generation: 0,
+            workers: Vec::new(),
+        };
+        assert!(matches!(
+            WorkerRegistry::restore(empty.clone(), 1000, 999),
+            Err(RegistryError::LeaseTtlTooShort {
+                ttl_ms: 999,
+                interval_ms: 1000
+            })
+        ));
+        // An empty registry is a legal snapshot.
+        assert!(WorkerRegistry::restore(empty, 1000, 1000).is_ok());
     }
 }

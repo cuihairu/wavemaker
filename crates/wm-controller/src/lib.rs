@@ -7,6 +7,7 @@ pub mod capacity;
 pub mod config;
 pub mod control;
 pub mod http;
+pub mod persistence;
 pub mod recovery;
 pub mod registry;
 pub mod server;
@@ -18,10 +19,13 @@ pub use aggregation::{
     MetricsAggregation, WorkerMetrics,
 };
 pub use backend_registry::{
-    BackendKind, BackendRecord, BackendRegistry, BackendRegistryError, BackendState,
-    BackendTransition,
+    BackendKind, BackendRecord, BackendRegistry, BackendRegistryError, BackendSnapshot,
+    BackendState, BackendTransition,
 };
 pub use capacity::ResourceCapacity;
+pub use persistence::{
+    load_snapshot, restore_controller, save_snapshot, ControllerSnapshot, PersistenceError,
+};
 pub use recovery::{PlanAuthority, RecoveryDivergence, RecoverySync, RecoveryView};
 pub use shard_plan::{
     MovedEntry, PlanBackend, PlanEntry, PlanError, PlannedArrival, ReplanRecord,
@@ -30,7 +34,7 @@ pub use shard_plan::{
 pub use config::ControllerConfig;
 pub use registry::{
     AdmissionVerdict, RegistrationDecision, RegistryError, WorkerRecord,
-    WorkerRegistration, WorkerRegistry, WorkerState,
+    WorkerRegistration, WorkerRegistry, WorkerSnapshot, WorkerState,
 };
 pub use server::run;
 pub use state::ControllerState;

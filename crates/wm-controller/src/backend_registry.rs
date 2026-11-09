@@ -128,6 +128,16 @@ impl BackendRecord {
     }
 }
 
+/// The Backend registry's restart-recovery snapshot (WM-0512). Records
+/// travel with their FULL transition history — a controller restart
+/// reconstructs each backend's state by replaying that history through
+/// the D3 machine, never by trusting or guessing a terminal value.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BackendSnapshot {
+    /// Records ordered by backend id (stable snapshot output).
+    pub backends: Vec<BackendRecord>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BackendRegistryError {
     #[error("backend id must not be empty")]
@@ -157,6 +167,48 @@ pub enum BackendRegistryError {
         to: BackendState,
         legal: Vec<BackendState>,
     },
+    #[error("snapshot backend {0} has an empty id")]
+    RestoreEmptyBackendId(String),
+    #[error("snapshot backend {0} appears twice")]
+    RestoreDuplicateBackend(String),
+    #[error("snapshot backend {0} has no transitions")]
+    RestoreNoTransitions(String),
+    #[error("snapshot backend {backend} first transition is not the registration (generation {generation}, state {state:?}); a registration is always generation 1 at Created")]
+    RestoreBadFirstTransition {
+        backend: String,
+        generation: u64,
+        state: BackendState,
+    },
+    #[error("snapshot backend {backend} transition at index {index} has an empty reason_code")]
+    RestoreEmptyReason { backend: String, index: usize },
+    #[error("snapshot backend {backend} transition at index {index} carries the wrong backend id")]
+    RestoreTransitionBackendMismatch { backend: String, index: usize },
+    #[error("snapshot backend {backend} transition at index {index} is out of order (generation {generation}, previous {previous}); generations advance by exactly one")]
+    RestoreGenerationGap {
+        backend: String,
+        index: usize,
+        generation: u64,
+        previous: u64,
+    },
+    #[error("snapshot backend {backend} transition at index {index} is illegal ({from:?} -> {to:?}); the D3 machine forbids it")]
+    RestoreIllegalTransition {
+        backend: String,
+        index: usize,
+        from: BackendState,
+        to: BackendState,
+    },
+    #[error("snapshot backend {backend} terminal generation mismatch: recorded {recorded}, replayed {replayed}")]
+    RestoreTerminalGenerationMismatch {
+        backend: String,
+        recorded: u64,
+        replayed: u64,
+    },
+    #[error("snapshot backend {backend} terminal state mismatch: recorded {recorded:?}, replayed {replayed:?}")]
+    RestoreTerminalStateMismatch {
+        backend: String,
+        recorded: BackendState,
+        replayed: BackendState,
+    },
 }
 
 fn unix_now() -> u64 {
@@ -176,6 +228,114 @@ impl BackendRegistry {
         Self {
             inner: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Restart-recovery snapshot (WM-0512): every record with its full
+    /// transition history, ordered by backend id.
+    pub fn snapshot(&self) -> BackendSnapshot {
+        BackendSnapshot {
+            backends: self.backends(),
+        }
+    }
+
+    /// Reconstruct a registry from a snapshot by REPLAYING each record's
+    /// recorded transition history through the D3 state machine — the
+    /// WM-0502 promise ("replay, not guess"). The replayed terminal
+    /// state and generation must equal the recorded ones, or the
+    /// snapshot is refused whole (never partially applied). A record is
+    /// invalid when:
+    ///
+    /// - the id is empty, duplicated, or the record has no transitions;
+    /// - the first transition is not the registration (generation 1 at
+    ///   `Created`);
+    /// - any transition is out of order (generation must advance by
+    ///   exactly one — epochs are strictly monotonic, never reset), is
+    ///   illegal under the D3 machine, carries a wrong backend id, or
+    ///   has an empty reason_code;
+    /// - the recorded terminal state/generation differs from the
+    ///   replayed ones.
+    ///
+    /// The recorded `observed_at`, `reason_code`, `detail`, and
+    /// `swell_id` are carried verbatim as facts — replay only
+    /// reconstructs the state shape, it never re-stamps history.
+    pub fn restore(snapshot: BackendSnapshot) -> Result<Self, BackendRegistryError> {
+        let mut inner = HashMap::new();
+        for record in snapshot.backends {
+            if record.backend_id.trim().is_empty() {
+                return Err(BackendRegistryError::RestoreEmptyBackendId(record.backend_id));
+            }
+            if inner.contains_key(&record.backend_id) {
+                return Err(BackendRegistryError::RestoreDuplicateBackend(
+                    record.backend_id.clone(),
+                ));
+            }
+            if record.transitions.is_empty() {
+                return Err(BackendRegistryError::RestoreNoTransitions(record.backend_id));
+            }
+            let first = &record.transitions[0];
+            if first.generation != 1 || first.state != BackendState::Created {
+                return Err(BackendRegistryError::RestoreBadFirstTransition {
+                    backend: record.backend_id.clone(),
+                    generation: first.generation,
+                    state: first.state,
+                });
+            }
+            let mut replayed_state = first.state;
+            let mut replayed_generation = first.generation;
+            for (index, transition) in record.transitions.iter().enumerate() {
+                if transition.backend_id != record.backend_id {
+                    return Err(BackendRegistryError::RestoreTransitionBackendMismatch {
+                        backend: record.backend_id.clone(),
+                        index,
+                    });
+                }
+                if transition.reason_code.trim().is_empty() {
+                    return Err(BackendRegistryError::RestoreEmptyReason {
+                        backend: record.backend_id.clone(),
+                        index,
+                    });
+                }
+                if index == 0 {
+                    continue;
+                }
+                if transition.generation != replayed_generation + 1 {
+                    return Err(BackendRegistryError::RestoreGenerationGap {
+                        backend: record.backend_id.clone(),
+                        index,
+                        generation: transition.generation,
+                        previous: replayed_generation,
+                    });
+                }
+                if !replayed_state.legal_successors().contains(&transition.state) {
+                    return Err(BackendRegistryError::RestoreIllegalTransition {
+                        backend: record.backend_id.clone(),
+                        index,
+                        from: replayed_state,
+                        to: transition.state,
+                    });
+                }
+                replayed_state = transition.state;
+                replayed_generation = transition.generation;
+            }
+            if record.generation != replayed_generation {
+                return Err(BackendRegistryError::RestoreTerminalGenerationMismatch {
+                    backend: record.backend_id.clone(),
+                    recorded: record.generation,
+                    replayed: replayed_generation,
+                });
+            }
+            if record.state != replayed_state {
+                return Err(BackendRegistryError::RestoreTerminalStateMismatch {
+                    backend: record.backend_id.clone(),
+                    recorded: record.state,
+                    replayed: replayed_state,
+                });
+            }
+            inner.insert(record.backend_id.clone(), record);
+        }
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
     }
 
     /// Register a backend; the initial state is `Created` and the
@@ -667,5 +827,274 @@ mod tests {
             .map(|record| record.backend_id)
             .collect();
         assert_eq!(ids, vec!["a-bot"]);
+    }
+
+    #[test]
+    fn snapshot_restore_replays_history_and_preserves_everything_verbatim() {
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 2.5)
+            .expect("register");
+        registry.declare_capacity(
+            "kb-conf",
+            crate::capacity::ResourceCapacity {
+                bot_slots: Some(400),
+                ..Default::default()
+            },
+        );
+        let steps = [
+            (BackendState::Handshaking, "handshake-start", "bridge dial"),
+            (BackendState::Degraded, "slow-handshake", "echo latency 4s"),
+            (BackendState::Recovering, "retry", ""),
+            (BackendState::Handshaking, "rejoined", ""),
+            (BackendState::Ready, "handshake-complete", ""),
+            (BackendState::Initialized, "init-ok", ""),
+            (BackendState::PlanAccepted, "plan-applied", "shard-plan v3"),
+            (BackendState::Running, "start-ok", ""),
+        ];
+        for (state, reason, detail) in steps {
+            report(&registry, "kb-conf", state, reason, detail).expect("legal step");
+        }
+        let snapshot = registry.snapshot();
+        assert_eq!(snapshot.backends.len(), 1);
+
+        let restored = BackendRegistry::restore(snapshot).expect("replayable");
+        let record = restored.backend("kb-conf").expect("record");
+        // Terminal state and generation are RECONSTRUCTED by replaying
+        // the recorded history — not trusted from a guessed field.
+        assert_eq!(record.state, BackendState::Running);
+        assert_eq!(record.generation, 9); // registration + 8 steps
+        assert_eq!(record.transitions.len(), 9);
+        // Facts travel verbatim: kind, weight (never interpreted),
+        // declared capacity, and the full history including observed
+        // times, reasons, details and swell bindings — none re-stamped.
+        assert_eq!(record.kind, BackendKind::EngineBot);
+        assert_eq!(record.weight, 2.5);
+        assert_eq!(
+            record.capacity,
+            Some(crate::capacity::ResourceCapacity {
+                bot_slots: Some(400),
+                ..Default::default()
+            })
+        );
+        assert_eq!(
+            record,
+            registry.backend("kb-conf").expect("original"),
+            "replay reproduces the record exactly, facts included"
+        );
+        // A restored registry keeps enforcing the D3 machine.
+        report(&restored, "kb-conf", BackendState::AdmissionStopped, "stop-admission", "")
+            .expect("restored backend still walks the machine");
+    }
+
+    #[test]
+    fn restore_refuses_illegal_replay_and_generation_gap() {
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        // Created -> Running is illegal under D3.
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.transitions.push(BackendTransition {
+                backend_id: "kb-conf".into(),
+                swell_id: None,
+                state: BackendState::Running,
+                observed_at_unix_s: 1,
+                reason_code: "jump".into(),
+                detail: String::new(),
+                generation: 2,
+            });
+            record.state = BackendState::Running;
+            record.generation = 2;
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreIllegalTransition {
+                backend,
+                index: 1,
+                from: BackendState::Created,
+                to: BackendState::Running,
+                ..
+            }) if backend == "kb-conf"
+        ));
+
+        // A generation SKIP (1 -> 3) is a gap, refused before legality
+        // is even consulted.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.transitions.push(BackendTransition {
+                backend_id: "kb-conf".into(),
+                swell_id: None,
+                state: BackendState::Handshaking,
+                observed_at_unix_s: 1,
+                reason_code: "skip".into(),
+                detail: String::new(),
+                generation: 3,
+            });
+            record.state = BackendState::Handshaking;
+            record.generation = 3;
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreGenerationGap {
+                backend,
+                index: 1,
+                generation: 3,
+                previous: 1,
+                ..
+            }) if backend == "kb-conf"
+        ));
+    }
+
+    #[test]
+    fn restore_refuses_terminal_mismatch_and_bad_first_transition() {
+        // Terminal state differs from the replayed one.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.state = BackendState::Running; // no transition pushed
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreTerminalStateMismatch {
+                backend,
+                recorded: BackendState::Running,
+                replayed: BackendState::Created,
+                ..
+            }) if backend == "kb-conf"
+        ));
+
+        // Terminal generation differs (checked before state, so keep
+        // state consistent).
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.generation = 5;
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreTerminalGenerationMismatch {
+                backend,
+                recorded: 5,
+                replayed: 1,
+                ..
+            }) if backend == "kb-conf"
+        ));
+
+        // The first transition must be the registration.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.transitions[0].state = BackendState::Handshaking;
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreBadFirstTransition {
+                backend,
+                generation: 1,
+                state: BackendState::Handshaking,
+                ..
+            }) if backend == "kb-conf"
+        ));
+    }
+
+    #[test]
+    fn restore_refuses_empty_no_transitions_duplicate_and_wrong_backend_id() {
+        // Empty id.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.backend_id = "  ".into();
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreEmptyBackendId(_))
+        ));
+
+        // No transitions.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            inner.get_mut("kb-conf").expect("record").transitions.clear();
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreNoTransitions(backend)) if backend == "kb-conf"
+        ));
+
+        // A transition carrying a different backend id.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        report(&registry, "kb-conf", BackendState::Handshaking, "go", "").expect("step");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.transitions[1].backend_id = "other".into();
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreTransitionBackendMismatch {
+                backend,
+                index: 1,
+                ..
+            }) if backend == "kb-conf"
+        ));
+
+        // An empty reason_code is unauditable, refused.
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        report(&registry, "kb-conf", BackendState::Handshaking, "go", "").expect("step");
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.get_mut("kb-conf").expect("record");
+            record.transitions[1].reason_code = "  ".into();
+        }
+        assert!(matches!(
+            BackendRegistry::restore(registry.snapshot()),
+            Err(BackendRegistryError::RestoreEmptyReason { index: 1, .. })
+        ));
+
+        // A duplicate backend id in one snapshot.
+        let mut snapshot = BackendSnapshot { backends: Vec::new() };
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        snapshot.backends.push(registry.backend("kb-conf").expect("record"));
+        snapshot.backends.push(registry.backend("kb-conf").expect("record"));
+        assert!(matches!(
+            BackendRegistry::restore(snapshot),
+            Err(BackendRegistryError::RestoreDuplicateBackend(backend)) if backend == "kb-conf"
+        ));
     }
 }

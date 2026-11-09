@@ -8,6 +8,7 @@ members = [
     "crates/wm-runtime",
     "crates/wm-supervisor",
     "crates/wm-observability",
+    "crates/wm-basin",
     "crates/wm-cli",
 ]
 

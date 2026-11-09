@@ -100,7 +100,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 4: Basin and Unified Observability
 
-- [ ] WM-0401: Implement the Basin data model.
+- [x] WM-0401: Implement the Basin data model. *(新 crate crates/wm-basin（workspace member +4 文件 9 tests×3 轮绿）：docs/basin.md「Basin's Role」根模型——Basin{environment,topology,observability,correlation}，serde Serialize/Deserialize 全模型（YAML roundtrip 对齐 docs/configuration.md `basin:` 块形状：ref→environment.id、provider: prometheus、collection_interval_ms）；Environment{id,labels(BTreeMap 报告输出稳定序)}；ObservabilityConfig{required,ProviderKind(Prometheus/OpenTelemetry/Custom(String)，serde rename snake_case+显式 opentelemetry),collection_interval_ms(>0 校验——Preflight「采样间隔须满足报告需求」),UnavailablePolicy(Abort/MarkPartial=Preflight 无观测可继续但报告标 Partial Observability 且不得给完整服务端结论)}；CorrelationContext{swell_id,TimeRange(start/end_unix_ms i64，start>end 拒)}——WM-0414/0416 扩展语义；Topology 为文档化的空容器（模型归 WM-0402，注释写明）；Basin::validate() 结构校验（env id 非空/interval>0/time range 不倒挂）；子模型按项落地不越界（catalog WM-0403/provider WM-0404/mapping WM-0405/scheduler WM-0406/timestamps WM-0407/quality WM-0408 各归其项）；cargo workspace 全绿 0 FAILED；serde_yaml 0.9 新类型变体=tag 标量（!custom inhouse）已按实证对齐)*
 - [ ] WM-0402: Implement the service topology model.
 - [ ] WM-0403: Implement the Metric Catalog.
 - [ ] WM-0404: Implement the Prometheus Provider.

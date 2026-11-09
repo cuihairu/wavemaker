@@ -2073,6 +2073,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wm-basin"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_yaml",
+ "thiserror",
+]
+
+[[package]]
 name = "wm-cli"
 version = "0.1.0"
 dependencies = [

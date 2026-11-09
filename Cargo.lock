@@ -2151,6 +2151,7 @@ dependencies = [
 name = "wm-runtime"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "thiserror",
  "wm-core",
 ]

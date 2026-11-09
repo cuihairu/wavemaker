@@ -5,6 +5,7 @@
 //! runtime, metrics) lives elsewhere.
 
 pub mod backend;
+pub mod hdr;
 pub mod spectrum;
 pub mod store;
 

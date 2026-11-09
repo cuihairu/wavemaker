@@ -33,6 +33,7 @@ serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tempfile = "3"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 wm-core = { path = "crates/wm-core" }
 wm-protocol = { path = "crates/wm-protocol" }

@@ -34,6 +34,7 @@ pub mod overhead;
 pub mod preflight;
 pub mod provider;
 pub mod quality;
+pub mod report;
 pub mod scheduler;
 pub mod server;
 pub mod timestamps;
@@ -75,6 +76,7 @@ pub use quality::{
     detect_delayed_samples, detect_missing_windows, quality_report,
     QualityFinding, QualityReport,
 };
+pub use report::{CorrelationInput, CorrelationReport, ReportError};
 pub use preflight::{
     decision_for, CheckOutcome, Preflight, PreflightCheck, PreflightDecision,
     PreflightReport,

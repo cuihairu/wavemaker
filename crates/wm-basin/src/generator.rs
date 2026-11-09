@@ -173,7 +173,7 @@ pub fn aggregate(snapshots: &[WorkerSnapshot]) -> GeneratorAggregate {
 /// One saturation signal: which generator resource crossed which bound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SaturationSignal {
-    pub metric: &'static str,
+    pub metric: String,
     pub observed: f64,
     pub threshold: f64,
 }
@@ -214,7 +214,7 @@ impl GeneratorAggregate {
         if let Some(cpu) = self.peak_cpu_ratio {
             if cpu > thresholds.max_cpu_ratio {
                 signals.push(SaturationSignal {
-                    metric: "peak_cpu_ratio",
+                    metric: "peak_cpu_ratio".into(),
                     observed: cpu,
                     threshold: thresholds.max_cpu_ratio,
                 });
@@ -223,7 +223,7 @@ impl GeneratorAggregate {
         if let Some(queue) = self.peak_event_queue_length {
             if queue > thresholds.max_event_queue_length {
                 signals.push(SaturationSignal {
-                    metric: "peak_event_queue_length",
+                    metric: "peak_event_queue_length".into(),
                     observed: queue as f64,
                     threshold: thresholds.max_event_queue_length as f64,
                 });
@@ -232,7 +232,7 @@ impl GeneratorAggregate {
         if let Some(lag) = self.max_scheduler_lag_ms {
             if lag > thresholds.max_scheduler_lag_ms {
                 signals.push(SaturationSignal {
-                    metric: "max_scheduler_lag_ms",
+                    metric: "max_scheduler_lag_ms".into(),
                     observed: lag,
                     threshold: thresholds.max_scheduler_lag_ms,
                 });
@@ -241,7 +241,7 @@ impl GeneratorAggregate {
         if let Some(deviation) = self.max_planned_actual_deviation_ms {
             if deviation > thresholds.max_planned_actual_deviation_ms {
                 signals.push(SaturationSignal {
-                    metric: "max_planned_actual_deviation_ms",
+                    metric: "max_planned_actual_deviation_ms".into(),
                     observed: deviation,
                     threshold: thresholds.max_planned_actual_deviation_ms,
                 });

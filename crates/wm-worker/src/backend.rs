@@ -228,8 +228,26 @@ impl BackendService for NativeBackendService {
             }));
         }
 
-        // Bind the swell before the plan transitions so the resulting records
-        // carry it (docs/backends.md "Every state change must include").
+        // Bind the swell only when the plan transitions are certain to run: a
+        // refused request must leave the binding — and every later record —
+        // attributed to the swell that actually owns the current state.
+        if !core
+            .machine
+            .state()
+            .can_transition_to(BackendState::Initialized)
+        {
+            let g = core.machine.generation();
+            return Ok(Response::new(ApplyPlanResponse {
+                result: Some(result_failed_precondition(
+                    "invalid_state_transition",
+                    format!(
+                        "backend in state {:?} cannot accept a plan",
+                        core.machine.state()
+                    ),
+                    g,
+                )),
+            }));
+        }
         core.machine.bind_swell(SwellId(req.swell_id.clone()));
 
         // Ready -> Initialized -> PlanAccepted (docs/backends.md chain).
@@ -468,5 +486,68 @@ mod tests {
         }
         // The bound swell is visible on the machine.
         assert_eq!(svc.snapshot().0, BackendState::PlanAccepted);
+    }
+
+    /// A rejected ApplyPlan must not touch the swell binding: the request
+    /// below fails the state check (PlanAccepted has no edge back to
+    /// Initialized), so the machine stays bound to swell-a and every later
+    /// record attributes to it — not to the swell whose plan was refused.
+    #[tokio::test]
+    async fn rejected_apply_plan_does_not_overwrite_swell_binding() {
+        let svc = NativeBackendService::new(vec!["native".into()]);
+        svc.handshake(Request::new(HandshakeRequest {
+            protocol_version: wm_protocol::PROTOCOL_VERSION,
+            backend_id: "backend-1".into(),
+            adapter_version: "0.1".into(),
+            engine_version: "native".into(),
+        }))
+        .await
+        .unwrap();
+
+        for (swell, digest) in [("swell-a", "sha256:plan-a"), ("swell-b", "sha256:plan-b")] {
+            let resp = svc
+                .apply_plan(Request::new(ApplyPlanRequest {
+                    swell_id: swell.into(),
+                    generation: 1,
+                    plan_digest: digest.into(),
+                    plan_payload: vec![],
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+            if swell == "swell-a" {
+                assert_eq!(resp.result.unwrap().code(), ErrorCode::Ok);
+            } else {
+                assert_eq!(
+                    resp.result.unwrap().code(),
+                    ErrorCode::FailedPrecondition,
+                    "second plan is refused: backend already PlanAccepted"
+                );
+            }
+        }
+
+        // The subsequent start must attribute to swell-a, the swell whose
+        // plan was actually accepted.
+        let resp = svc
+            .start(Request::new(StartRequest {
+                swell_id: "swell-a".into(),
+                generation: 2,
+                operation_id: "op-1".into(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(resp.result.unwrap().code(), ErrorCode::Ok);
+
+        let running = svc
+            .history()
+            .into_iter()
+            .find(|r| r.to == BackendState::Running)
+            .expect("start records a Running transition");
+        assert_eq!(
+            running.swell_id,
+            SwellId("swell-a".into()),
+            "refused plan must not steal the binding"
+        );
     }
 }

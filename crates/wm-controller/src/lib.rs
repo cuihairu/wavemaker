@@ -8,6 +8,7 @@ pub mod control;
 pub mod http;
 pub mod registry;
 pub mod server;
+pub mod shard_plan;
 pub mod state;
 
 pub use backend_registry::{
@@ -15,6 +16,10 @@ pub use backend_registry::{
     BackendTransition,
 };
 pub use capacity::ResourceCapacity;
+pub use shard_plan::{
+    MovedEntry, PlanBackend, PlanEntry, PlanError, PlannedArrival, ReplanRecord,
+    ShardPlan, ShardRule,
+};
 pub use config::ControllerConfig;
 pub use registry::{
     RegistrationDecision, RegistryError, WorkerRecord, WorkerRegistration,

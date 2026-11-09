@@ -61,6 +61,12 @@ impl Transport for TcpTransport {
         if !self.open {
             return Err(TransportError::Closed);
         }
+        // A zero-length read is a no-op, never EOF: `Read::read` may return
+        // Ok(0) for an empty buffer (some platforms do), which the code below
+        // would misread as a peer close and drop a live connection.
+        if buf.is_empty() {
+            return Ok(0);
+        }
         match self.stream.read(buf) {
             Ok(0) => {
                 // Peer closed (FIN): no more data will ever arrive.
@@ -150,6 +156,24 @@ mod tests {
         let mut buf = [0u8; 8];
         // The peer has sent nothing; recv must not block and must not error.
         assert_eq!(t.recv(&mut buf), Ok(0));
+    }
+
+    #[test]
+    fn recv_with_empty_buffer_does_not_close_a_live_connection() {
+        let addr = start_echo_server();
+        let mut t = TcpTransport::connect_timeout(addr, Duration::from_secs(2)).unwrap();
+        assert_eq!(t.send(b"ping"), Ok(4));
+        // A zero-length recv returns Ok(0) without touching the socket; it is
+        // not a peer close and must not drop the connection.
+        let mut empty: [u8; 0] = [];
+        assert_eq!(
+            t.recv(&mut empty),
+            Ok(0),
+            "empty buffer read is not a close"
+        );
+        assert!(t.is_open(), "connection must survive an empty-buffer recv");
+        let echoed = recv_with_retry(&mut t, 4);
+        assert_eq!(echoed, b"ping", "echo still works after the empty read");
     }
 
     #[test]

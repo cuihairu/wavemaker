@@ -375,8 +375,10 @@ mod tests {
         // worker_b cannot measure scheduler lag; with worker_a absent the
         // aggregate has None and must not saturate on it.
         let aggregate = aggregate(&[worker_b()]);
-        let mut thresholds = SaturationThresholds::default();
-        thresholds.max_scheduler_lag_ms = 0.0;
+        let thresholds = SaturationThresholds {
+            max_scheduler_lag_ms: 0.0,
+            ..SaturationThresholds::default()
+        };
         assert!(aggregate.saturation_signals(&thresholds).is_empty());
     }
 

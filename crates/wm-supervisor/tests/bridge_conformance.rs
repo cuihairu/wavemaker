@@ -27,7 +27,6 @@ use serde_json::{json, Value};
 use wm_runtime::framing::{FrameDecoder, FrameEncoder, LengthPrefixed};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
-const PUMP_DELAY_S: f64 = 0.1;
 
 struct Wire {
     stream: UnixStream,
@@ -140,7 +139,7 @@ fn bridge_conformance_over_unix_socket() {
     let socket_path = dir.path().join("bridge.sock");
     let listener = UnixListener::bind(&socket_path).unwrap();
 
-    let mut child = Command::new("python3")
+    let child = Command::new("python3")
         .arg(harness_path())
         .arg(&socket_path)
         .stdout(Stdio::null())

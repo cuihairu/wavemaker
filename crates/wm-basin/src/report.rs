@@ -403,9 +403,11 @@ mod tests {
             end_unix_ms: 1000,
         }];
         let quality = quality_clean();
-        let mut hot = WorkerSnapshot::default();
-        hot.worker_id = "worker-a".into();
-        hot.cpu_ratio = Some(0.99);
+        let hot = WorkerSnapshot {
+            worker_id: "worker-a".into(),
+            cpu_ratio: Some(0.99),
+            ..WorkerSnapshot::default()
+        };
         let generator = crate::generator::aggregate(&[hot]);
         let report = CorrelationReport::assemble(input(
             &correlation,

@@ -273,7 +273,7 @@ mod tests {
             }],
             100_000,
         );
-        assert!(detect_delayed_samples(&[query.clone()], 0).is_empty());
+        assert!(detect_delayed_samples(std::slice::from_ref(&query), 0).is_empty());
         assert!(detect_delayed_samples(&[query], -1).is_empty());
     }
 
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(report.delayed_samples(), 0);
         assert!(!report.is_clean());
 
-        let clean = quality_report(&[good.clone()], 500);
+        let clean = quality_report(std::slice::from_ref(&good), 500);
         assert!(clean.is_clean());
         assert_eq!(clean.inspected, 1);
     }

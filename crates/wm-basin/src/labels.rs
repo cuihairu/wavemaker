@@ -220,9 +220,11 @@ mod tests {
 
     #[test]
     fn generator_saturation_and_observer_degradation_surface() {
-        let mut hot = WorkerSnapshot::default();
-        hot.worker_id = "worker-a".into();
-        hot.cpu_ratio = Some(0.99);
+        let hot = WorkerSnapshot {
+            worker_id: "worker-a".into(),
+            cpu_ratio: Some(0.99),
+            ..WorkerSnapshot::default()
+        };
         let generator = crate::generator::aggregate(&[hot]);
         let quality = quality_report(&clean_batch(), 5000);
         let alignment = plain_alignment();

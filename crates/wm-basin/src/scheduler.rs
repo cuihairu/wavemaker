@@ -327,7 +327,7 @@ mod tests {
             scheduler_from_interval(mapping, 15_000).expect("scheduler");
         assert_eq!(scheduler.step_ms(), 15_000);
         let collected = scheduler.collect(&SplitProvider, 0, 1000, 42);
-        let entry = entry_of(&scheduler.mapping(), &collected[0]);
+        let entry = entry_of(scheduler.mapping(), &collected[0]);
         assert_eq!(entry.service, "loginapp");
     }
 

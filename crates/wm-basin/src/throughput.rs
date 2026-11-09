@@ -233,9 +233,7 @@ impl ThroughputSummary {
             ThroughputSource::Client { backend } => format!("client:{backend}"),
         };
         let mut out = String::new();
-        out.push_str(&format!(
-            "| throughput | source | unit | peak | p50 | p95 | p99 | points |\n"
-        ));
+        out.push_str("| throughput | source | unit | peak | p50 | p95 | p99 | points |\n");
         out.push_str("|---|---|---|---|---|---|---|---|\n");
         out.push_str(&format!(
             "| {kind} | {source} | {unit} | {peak:.3} | {p50:.3} | {p95:.3} | {p99:.3} | {points} |\n",

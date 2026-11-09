@@ -36,7 +36,7 @@ fn read_first_frame(
         if n == 0 {
             return Err(());
         }
-        for frame in decoder.feed(&buf[..n]).unwrap() {
+        if let Some(frame) = decoder.feed(&buf[..n]).unwrap().into_iter().next() {
             return Ok(frame);
         }
     }

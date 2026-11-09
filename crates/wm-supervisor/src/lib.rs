@@ -537,7 +537,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn terminate_escalates_to_kill_when_child_ignores_sigterm() {
-        let mut spec = ProcessSpec::new("/bin/sh", &["-c", "trap '' TERM; while :; do sleep 1; done"]);
+        let spec = ProcessSpec::new("/bin/sh", &["-c", "trap '' TERM; while :; do sleep 1; done"]);
         let mut sup = NativeProcessLauncher::new();
         sup.start(&spec).await.unwrap();
         // Let the child reach its signal-handling state: a SIGTERM racing

@@ -130,7 +130,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 5: Distributed Execution and Recovery
 
-- [ ] WM-0501: Implement the Worker Registry.
+- [x] WM-0501: Implement the Worker Registry. — 2026-11-10 落地 `crates/wm-controller/src/registry.rs`（8 测试）。`WorkerRegistry` 是 Phase 5 的正式注册中心（Phase 1 的 `state.rs` 扁平 map 保持不动）：`WorkerRegistration{worker_id, protocol_version, adapter_version, engine_version, runtime_version, capabilities}` 全字段按 protobuf-conventions §12.1 落盘；`register` 先做 §5.3 握手门——`protocol_version != wm_protocol::PROTOCOL_VERSION` 一律 `Rejected{reason}` 带具体版本差（绝不静默混入不兼容 mesh，拒绝者不入册），接受则分配单调 generation 并 verbatim 记录版本（可审计 mesh 组成）；重入册（rejoin）必得新 generation。三态生命周期 `Online/LostContact/Deregistered`：LostContact 是状态不是临时列表（WM-0507 冻结新准入可直接查），过期判定整段留在 unix 秒单一时钟（`stamp + 2×interval < now`，修复初版 Instant/unix 混钟错误）；`expired_workers` 只报 Online 过期者（循环幂等），`mark_lost` Online→LostContact，**当前 generation 的新心跳即足以证明存活**回置 Online（WM-0509 的恢复握手是 Backend 侧另一机制，不混淆）；`deregister` 保留记录（Deregistered）供 WM-0512 重启恢复与审计，离开后心跳拒绝、rejoin 重新入册得新代。注册与 last_heartbeat 分离（首跳前 None，租约循环不提前判死）。wm-controller 25×3 绿，workspace 测试/clippy 全绿。
 - [ ] WM-0502: Implement the Backend Registry.
 - [ ] WM-0503: Implement resource capacity descriptions.
 - [ ] WM-0504: Implement ShardPlan.

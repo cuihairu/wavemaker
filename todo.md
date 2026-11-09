@@ -76,27 +76,27 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 3: Native Rust Runtime
 
-- [ ] WM-0301: Implement the Actor state machine.
-- [ ] WM-0302: Implement the Clock trait and ManualClock.
-- [ ] WM-0303: Implement RealClock.
-- [ ] WM-0304: Implement the Timer Scheduler.
-- [ ] WM-0305: Implement Seeded RNG.
-- [ ] WM-0306: Implement the Arrival Scheduler.
-- [ ] WM-0307: Implement Actor lifecycle management.
-- [ ] WM-0308: Implement the Session state machine.
-- [ ] WM-0309: Implement the Transport trait.
-- [ ] WM-0310: Implement the first TCP Transport.
-- [ ] WM-0311: Implement Framing.
-- [ ] WM-0312: Implement Schema / Codec separation.
-- [ ] WM-0313: Implement the Behavior trait.
-- [ ] WM-0314: Implement message event dispatch.
-- [ ] WM-0315: Implement batch Actor scheduling.
-- [ ] WM-0316: Implement Worker-local Metrics.
-- [ ] WM-0317: Implement HDR histogram and V2 blob.
-- [ ] WM-0318: Implement coordinated omission correction.
-- [ ] WM-0319: Implement 5k / 20k / 50k benchmarks.
-- [ ] WM-0320: Implement the 24h soak test.
-- [ ] WM-0321: Implement the Native Backend conformance test.
+- [x] WM-0301: Implement the Actor state machine. *(1826473；crates/wm-runtime/src/actor.rs — Idle→Scheduled→Running→Waiting→Closed/Failed，审计迁移 + 单调时间戳；6 unit tests)*
+- [x] WM-0302: Implement the Clock trait and ManualClock. *(5ca3078；crates/wm-runtime/src/clock.rs — Clock trait（now_nanos/is_deterministic）+ ManualClock（advance/set，回拨 panic）+ RealClock；5 unit tests；ManualClock 为全部确定性测试的时间基)*
+- [x] WM-0303: Implement RealClock. *(5ca3078；clock.rs RealClock（Instant 基准，非确定性）；5 unit tests 含 RealClock 单调递增)*
+- [x] WM-0304: Implement the Timer Scheduler. *(1826473；crates/wm-runtime/src/scheduler.rs — BinaryHeap 最小堆 + 墓碑取消；复用 benches/timer_scheduler.rs 基线设计；9 unit tests 含大规模正确性)*
+- [x] WM-0305: Implement Seeded RNG. *(5ca3078；crates/wm-runtime/src/rng.rs — SplitMix64 + for_stream(seed,name) FNV-1a；10 unit tests 含确定性重放)*
+- [x] WM-0306: Implement the Arrival Scheduler. *(7ed7804；crates/wm-runtime/src/arrival.rs — NHPP 精确逆变法 Λ⁻¹（ramp λ₀e^{kt}→hold 闭式），ceil 到 ns 保严格单调；11 unit tests，对拍 docs/spec/spectrum-semantics.md §7 解析 Λ(T)=3805.4)*
+- [x] WM-0307: Implement Actor lifecycle management. *(7ed7804 + e448bbf 重构；crates/wm-runtime/src/lifecycle.rs — spawn/fire_due/start/suspend/resume/requeue/close/fail/drain + planned_to_start 偏差与峰值 runnable 测量；11 unit tests)*
+- [x] WM-0308: Implement the Session state machine. *(11b3567；crates/wm-runtime/src/session.rs — Planned→Scheduled→Creating→Connecting→Authenticating→Active→Draining→Closed，any→Failed；审计迁移；4 unit tests)*
+- [x] WM-0309: Implement the Transport trait. *(d6cd9aa；crates/wm-runtime/src/transport.rs — poll 式 send/recv/is_open/close + TransportError{WouldBlock,Closed,Io} + MockTransport（全双工对、full-close 语义）；5 unit tests)*
+- [x] WM-0310: Implement the first TCP Transport. *(df858a7；crates/wm-runtime/src/tcp.rs — std-only 非阻塞 TcpStream 适配（无 tokio），connect/connect_timeout，WouldBlock→Ok(0)；4 unit tests 含 loopback 回声)*
+- [x] WM-0311: Implement Framing. *(d6cd9aa；crates/wm-runtime/src/framing.rs — [u32 BE len][payload]，LengthPrefixed 有状态解码器（半帧缓冲）；8 unit tests)*
+- [x] WM-0312: Implement Schema / Codec separation. *(d6cd9aa；crates/wm-runtime/src/codec.rs — Schema trait（VERSION/is_known）与 Codec 分离，wire [len][id][payload]；8 unit tests)*
+- [x] WM-0313: Implement the Behavior trait. *(e448bbf；crates/wm-runtime/src/behavior.rs — 对象安全 Behavior + BehaviorContext（now_ns/rng/send/arm_timer/log）+ ActorDecision/BehaviorEffect；4 unit tests；Lua 不在 v1)*
+- [x] WM-0314: Implement message event dispatch. *(e448bbf；crates/wm-runtime/src/dispatch.rs — EventDispatcher（subscriptions id→Vec<ActorId>，每 actor VecDeque 事件）；6 unit tests)*
+- [x] WM-0315: Implement batch Actor scheduling. *(e448bbf + fa6f25e（缺陷修复）；crates/wm-runtime/src/batch.rs — ActorRunner（fire_arrivals + 行为 timer + ≤batch_size run 每 tick，路由 effects）；6 unit tests；**WM-0319 暴露并修复真实缺陷**：behavior 返回 Wait 时若有更多事件已入队则被搁置卡死，现 Wait 分支与 Continue 一致（有 pending 则 requeue，否则 suspend），50k 档修复前无法跑完）*
+- [x] WM-0316: Implement Worker-local Metrics. *(45e654d；crates/wm-runtime/src/metrics.rs — 每 worker 无锁 AtomicU64 计数器/时长轨 + MetricsSnapshot + aggregate()（和 total、max maxima），覆盖 timer/actor/消息字节/run/lag/expiry/planned-to-start/runnable 长度；4 unit tests)*
+- [x] WM-0317: Implement HDR histogram and V2 blob. *(77cdb06；crates/wm-runtime/src/histogram.rs — HistogramRecorder 包 wm_core::hdr（frozen_v1：2 位有效数字、ns、1..3.6e12），merge 经 record_value_count，encode_v2_blob/from_v2_blob；4 unit tests)*
+- [x] WM-0318: Implement coordinated omission correction. *(4550012；crates/wm-runtime/src/omission.rs — record_with_expected_interval（Gil Tene：value 后补 value−interval…≥interval）；5 unit tests)*
+- [x] WM-0319: Implement 5k / 20k / 50k benchmarks. *(403a06b；crates/wm-runtime/benches/runtime.rs — 真实 ActorRunner 端到端 lifecycle（5k/20k/50k × 每 actor 4 timer）+ start 路径；实测见 docs/benchmarks/runtime-benchmark.md（lifecycle 652/500/410 Kelem/s、start 721/351/235 Kelem/s，本机 ~2–5 倍负载）；本机可跑 50k，非假数字)*
+- [x] WM-0320: Implement the 24h soak test. *(f26afba；crates/wm-runtime/tests/soak.rs — 重复 swell 周期模式（每周期独立 ActorRunner，内存上界=周期活集）；soak_short_repeated_cycles CI 内跑；soak_long_wallclock 为 24h 目标 `#[ignore]` 按需跑；实测 50k 两窗口（1.7 / 0.33 cycles/s，RSS 平坦 ~45 MiB）见 docs/benchmarks/soak-capacity.md——**完整 24h 连续运行未在本会话执行**（墙钟时间问题，非能力问题），已如实标注)*
+- [x] WM-0321: Implement the Native Backend conformance test. *(1d4bc95；crates/wm-core/tests/backend_conformance.rs — 7 tests：穷举 12×12 迁移表对拍 docs/backends.md（27 条允许边恰配）、每迁移必带 backend_id/swell_id/state/observed_at/reason_code/detail/generation、失败/恢复路径、stale-generation 拒绝、Stopped 终态；**修复契约缺口**：TransitionRecord 原缺 swell_id，现机器绑定并逐条记录；worker 侧 apply_plan 绑定 swell（wm-worker 1 test）)*
 
 ## Phase 4: Basin and Unified Observability
 

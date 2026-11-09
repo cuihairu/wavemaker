@@ -164,7 +164,15 @@ impl ActorRunner {
                 }
             }
             ActorDecision::Wait => {
-                let _ = self.lifecycle.suspend(actor, now_ns, "waiting");
+                // A Wait decision with events already queued must not strand
+                // them: if further timers/messages arrived while the actor was
+                // runnable, keep it runnable so they are processed. Suspend
+                // only when the actor is genuinely done for now.
+                if self.dispatcher.pending(actor) > 0 {
+                    self.lifecycle.requeue(actor);
+                } else {
+                    let _ = self.lifecycle.suspend(actor, now_ns, "waiting");
+                }
             }
             ActorDecision::Close => {
                 let _ = self.lifecycle.close(actor, now_ns, "behavior closed");
@@ -358,5 +366,61 @@ mod tests {
             outcomes
         };
         assert_eq!(run(), run());
+    }
+
+    /// A behavior returning `Wait` while further events are already queued must
+    /// not strand them: the runner requeues the actor so the queued events are
+    /// processed instead of leaving it suspended forever.
+    ///
+    /// Two timers armed at the same deadline fire in one tick; the actor is
+    /// resumed once and must still observe *both* `Timer` events before it can
+    /// close.
+    #[test]
+    fn wait_decision_requeues_when_events_are_pending() {
+        struct TwoTimerBehavior {
+            fired: u8,
+        }
+        impl Behavior for TwoTimerBehavior {
+            fn on_event(
+                &mut self,
+                ctx: &mut BehaviorContext,
+                event: &BehaviorEvent,
+            ) -> ActorDecision {
+                match event {
+                    BehaviorEvent::Started => {
+                        ctx.arm_timer(1, ctx.now_ns() + 1000);
+                        ctx.arm_timer(2, ctx.now_ns() + 1000);
+                        ActorDecision::Wait
+                    }
+                    BehaviorEvent::Timer(_) => {
+                        self.fired += 1;
+                        if self.fired >= 2 {
+                            ActorDecision::Close
+                        } else {
+                            ActorDecision::Wait
+                        }
+                    }
+                    BehaviorEvent::Message(_, _) => ActorDecision::Wait,
+                }
+            }
+        }
+
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(11);
+        let actor = runner.spawn(0, Box::new(TwoTimerBehavior { fired: 0 }));
+        let t0 = runner.tick(0, &mut rng);
+        assert_eq!(t0.started, 1);
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Waiting));
+
+        // Both timers fire in this tick. The actor is resumed once (second
+        // resume is skipped because it is already runnable) but both Timer
+        // events are queued; the actor must not strand the second one.
+        let t1 = runner.tick(1000, &mut rng);
+        assert_eq!(t1.resumed, 1);
+        assert!(
+            t1.closed >= 1,
+            "actor must close after processing both timers"
+        );
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Closed));
     }
 }

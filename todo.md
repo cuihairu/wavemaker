@@ -55,8 +55,8 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## Phase 2: KBEngine Bridge MVP
 
-- [ ] WM-0201: Create the KBEngine Bridge Python bootstrap.
-- [ ] WM-0202: Implement the Bridge local IPC client.
+- [x] WM-0201: Create the KBEngine Bridge Python bootstrap. *(engine-adapters/kbengine/bridge/bootstrap.py——Bootstrap 状态机 standby→running→stopped（on_init 二次调用守卫 §8.1 S6）、单次 100ms 泵（KBEngine.callback 恰 2 参，经 engine_port.py:32 端口；泵异常打印吞掉后照常重臂 §8.1 S3）、BootstrapConfig 四环境变量注入（WAVEMAKER_BRIDGE_IPC/TOKEN/SWELL_ID/BACKEND_ID）；capability.py 诚实能力目录（exact_arrival=degraded + arrival_batch_ms=1000/resolution_ms=100，§8.1 S8）；engine-adapters/kbengine/kbemain.py 入口脚本 onInit(0)/onFinish 委托；tests/test_bootstrap.py 10 unit tests 经 FakeEngine 端口，无引擎运行时依赖)*
+- [x] WM-0202: Implement the Bridge local IPC client. *(engine-adapters/kbengine/bridge/ipc_client.py——parse_address:68 支持 unix:/裸路径/tcp:host:port（bridge.md 双边界）、线格式 `[u32 BE len][UTF-8 JSON]` 与 crates/wm-runtime/src/framing.rs 同前缀、字段名镜像 proto/engine/v1/engine_bridge.proto（嵌入解释器无 protobuf，不引入依赖）；FrameReader:111 半帧缓冲+多帧合并+MAX_FRAME_BYTES 拒绝越界/非 JSON 对象（越界即断连，长度前缀流不可重同步）；IpcClient:211 收发双线程：接收线程只入队 CommandQueue 绝不调脚本 API（§8.3 #1/S1，test_receiver_thread_only_enqueues 锁定），send_message:322 只入队不落 socket（S2：内核缓冲满不得拖死主循环），序列化在发送线程做（引擎线程不付 JSON 开销）；connect:251 有界连接（2s）失败仅计数不抛（audit §5：onInit 抛异常会杀死 bots 进程）；close:286 同步有界 join、排空残余计入 dropped（§8.3 #5 无异步收尾）；OutboundQueue:148 有界丢弃最新+put_back:190 保证停机路径上每条消息「已发送/计 dropped/计 encode_error」三者恰居其一（测试抓到发送线程停机时静默吞消息的真实缺陷）；bootstrap.py:142/161 on_init 启动、on_finish 内联关闭、send_message:169/ipc_stats:177 转发；心跳/重连归 WM-0212，本模块只报状态与计数；tests/test_ipc_client.py 19 tests 全部经真实 loopback 套接字（AF_UNIX+TCP 双栈）)*
 - [ ] WM-0203: Implement Handshake and capability report.
 - [ ] WM-0204: Implement Supervisor startup of KBEngine Bots.
 - [ ] WM-0205: Implement Swell / Backend / generation injection.

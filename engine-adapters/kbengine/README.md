@@ -15,10 +15,12 @@ engine-adapters/kbengine/
 │   ├── bootstrap.py        # WM-0201: state machine + pump + config
 │   ├── capability.py       # honest capability catalog (handshake payload)
 │   ├── command_queue.py    # thread-safe inbound queue (IPC threads enqueue)
+│   ├── ipc_client.py       # WM-0202: local IPC client (UDS/TCP, framing)
 │   └── engine_port.py      # thin port over KBEngine.callback/cancelCallback
 └── tests/
     ├── __init__.py
-    └── test_bootstrap.py   # unit tests via a FakeEngine port
+    ├── test_bootstrap.py   # WM-0201 unit tests via a FakeEngine port
+    └── test_ipc_client.py  # WM-0202 unit tests over real loopback sockets
 ```
 
 ## Loading into KBEngine
@@ -40,9 +42,22 @@ The Supervisor sets these environment variables on the bot child process
 | `WAVEMAKER_SWELL_ID` | current Swell id |
 | `WAVEMAKER_BACKEND_ID` | Backend instance id |
 
-Without an IPC address the bootstrap stays in `standby`: it arms the pump but
-performs no I/O, so the engine can load it before the IPC client (WM-0202)
-and handshake (WM-0203) land.
+`WAVEMAKER_BRIDGE_IPC` accepts `unix:<path>`, a bare absolute path (the
+usual `/tmp/wm.sock`), or `tcp:<host>:<port>` for loopback debugging
+(docs/bridge.md). With an injected address, `onInit` starts the local IPC
+client (WM-0202) and `onFinish` closes it inline; a connect failure is
+recorded on the client (`stats()`) instead of aborting engine startup.
+Without an IPC address the bootstrap stays in `standby`: it arms the pump
+but performs no I/O.
+
+## Wire format
+
+`[u32 BE length][UTF-8 JSON payload]` — the same length prefix as the Rust
+framing layer (crates/wm-runtime/src/framing.rs). JSON rather than protobuf
+because the KBEngine embedded interpreter ships no protobuf bindings;
+message field names mirror `wavemaker.engine.v1`
+(proto/engine/v1/engine_bridge.proto) so the Supervisor side (WM-0204+)
+maps messages 1:1. Handshake payload and version refusal is WM-0203.
 
 ## Engine constraints honoured (audit §8.3)
 

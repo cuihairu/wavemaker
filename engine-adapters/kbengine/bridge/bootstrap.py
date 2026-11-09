@@ -8,10 +8,10 @@ WM-0201. The bootstrap owns:
   * the injected configuration (Supervisor passes IPC address, token, Swell
     ID, Backend ID — kbengine.md lifecycle step 3).
 
-It performs no IPC itself and sends no handshake: the local IPC client is
-WM-0202 and the handshake is WM-0203. Until an IPC address is injected the
+IPC transport is owned by the local IPC client (WM-0202): with an injected
+address `on_init` starts it and `on_finish` closes it inline; without one the
 bootstrap stays in standby, so the engine can load it harmlessly while the
-rest of Phase 2 lands.
+rest of Phase 2 lands. The handshake itself is WM-0203.
 
 Constraints honoured here (docs/spec/kbengine-api-audit.md §8.3):
 
@@ -36,6 +36,7 @@ from .capability import (
     SCHEDULING_RESOLUTION_MS,
 )
 from .command_queue import CommandQueue
+from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 
 
 class BootstrapConfig(object):
@@ -85,6 +86,7 @@ class Bootstrap(object):
         self._pump_id = None
         self._state = "standby"
         self._events = []
+        self._client = None
 
     @property
     def state(self):
@@ -97,6 +99,11 @@ class Bootstrap(object):
     @property
     def queue(self):
         return self._queue
+
+    @property
+    def client(self):
+        """The IPC client (WM-0202), or None in standby."""
+        return self._client
 
     @property
     def pump_id(self):
@@ -123,11 +130,21 @@ class Bootstrap(object):
 
         The engine calls this exactly once per process (S6) with a fixed int
         argument 0 (audit §5); a second call is guarded. Throwing here aborts
-        engine startup, so this is synchronous and non-throwing by design.
+        engine startup, so this is synchronous and non-throwing by design:
+        with an injected IPC address the client is started here, and a
+        connect failure is recorded on the client (stats/is_connected)
+        rather than raised into the engine (kbengine.md lifecycle step 4).
         """
         if self._state != "standby":
             # Already running or finished: no double init (S6).
             return self._state
+        if self._config.has_ipc:
+            self._client = IpcClient(
+                self._config.ipc_address,
+                self._queue,
+                OutboundQueue(DEFAULT_OUTBOUND_LIMIT),
+            )
+            self._client.connect()
         self._state = "running"
         self._arm_pump()
         return self._state
@@ -136,14 +153,34 @@ class Bootstrap(object):
         """Entry from the engine entry script's `onFinish()` (no args).
 
         Must be synchronous: the engine's finalise does not wait for async
-        teardown (§8.3 #5), so no async work is armed here — the pump is
-        simply cancelled and the state transitions to stopped.
+        teardown (§8.3 #5), so no async work is armed here — the IPC client
+        is closed inline (bounded join, never a detached wait) and the pump
+        is simply cancelled.
         """
+        if self._client is not None:
+            self._client.close()
+            self._client = None
         if self._pump_id is not None:
             self._engine.cancel(self._pump_id)
             self._pump_id = None
         self._state = "stopped"
         return self._state
+
+    def send_message(self, message):
+        """Queue a message for the Supervisor over IPC. Returns False when
+        in standby, disconnected, or dropped on overflow; never raises and
+        never blocks the scripting thread (S2). An unserialisable message is
+        reported asynchronously as `encode_errors` in `ipc_stats()` — the
+        engine thread never pays for JSON encoding."""
+        if self._client is None:
+            return False
+        return self._client.send_message(message)
+
+    def ipc_stats(self):
+        """Transport counters, or None while in standby."""
+        if self._client is None:
+            return None
+        return self._client.stats()
 
     # -- pump ---------------------------------------------------------------
 

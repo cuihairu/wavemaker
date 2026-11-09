@@ -78,7 +78,7 @@ fn run_lifecycle(actors: usize) -> usize {
     let mut runner = ActorRunner::new(BATCH_SIZE);
     let mut rng = SeededRng::new(42);
     for _ in 0..actors {
-        runner.spawn(0, Box::new(FourTimerBehavior::default()));
+        runner.spawn(0, 0, Box::new(FourTimerBehavior::default()));
     }
 
     let mut now = 0u64;
@@ -111,7 +111,7 @@ fn run_start(actors: usize) -> usize {
     let mut runner = ActorRunner::new(BATCH_SIZE);
     let mut rng = SeededRng::new(7);
     for _ in 0..actors {
-        runner.spawn(0, Box::new(StartOnlyBehavior));
+        runner.spawn(0, 0, Box::new(StartOnlyBehavior));
     }
 
     let mut started = 0usize;

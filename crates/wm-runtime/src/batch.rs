@@ -67,9 +67,15 @@ impl ActorRunner {
         }
     }
 
-    /// Spawn an actor with its behavior, planned to start at `planned_at_ns`.
-    pub fn spawn(&mut self, planned_at_ns: u64, behavior: Box<dyn Behavior>) -> ActorId {
-        let id = self.lifecycle.spawn(planned_at_ns);
+    /// Spawn an actor with its behavior, observed at `now_ns` and planned to
+    /// start at `planned_at_ns`.
+    pub fn spawn(
+        &mut self,
+        now_ns: u64,
+        planned_at_ns: u64,
+        behavior: Box<dyn Behavior>,
+    ) -> ActorId {
+        let id = self.lifecycle.spawn(now_ns, planned_at_ns);
         self.behaviors.insert(id, behavior);
         id
     }
@@ -282,7 +288,7 @@ mod tests {
     fn started_event_then_echo_round_trip() {
         let mut runner = ActorRunner::new(64);
         let mut rng = SeededRng::new(1);
-        let actor = runner.spawn(0, Box::new(EchoBehavior));
+        let actor = runner.spawn(0, 0, Box::new(EchoBehavior));
         runner.subscribe(actor, 5);
 
         let t0 = runner.tick(0, &mut rng);
@@ -303,7 +309,7 @@ mod tests {
     fn timer_wakes_waiting_actor_and_delivers_timer_event() {
         let mut runner = ActorRunner::new(64);
         let mut rng = SeededRng::new(2);
-        let actor = runner.spawn(0, Box::new(TimedBehavior));
+        let actor = runner.spawn(0, 0, Box::new(TimedBehavior));
         let t0 = runner.tick(0, &mut rng);
         assert_eq!(t0.started, 1);
         assert_eq!(t0.logs, vec!["armed".to_string()]);
@@ -321,9 +327,9 @@ mod tests {
     fn batch_size_bounds_actors_run_per_tick() {
         let mut runner = ActorRunner::new(2);
         let mut rng = SeededRng::new(3);
-        let _a = runner.spawn(0, Box::new(EchoBehavior));
-        let _b = runner.spawn(0, Box::new(EchoBehavior));
-        let _c = runner.spawn(0, Box::new(EchoBehavior));
+        let _a = runner.spawn(0, 0, Box::new(EchoBehavior));
+        let _b = runner.spawn(0, 0, Box::new(EchoBehavior));
+        let _c = runner.spawn(0, 0, Box::new(EchoBehavior));
         let t0 = runner.tick(0, &mut rng);
         assert_eq!(t0.started, 3);
         assert_eq!(t0.run, 2, "batch size 2 caps the run");
@@ -338,7 +344,7 @@ mod tests {
     fn close_decision_closes_actor_and_clears_events() {
         let mut runner = ActorRunner::new(64);
         let mut rng = SeededRng::new(4);
-        let _actor = runner.spawn(0, Box::new(TimedBehavior));
+        let _actor = runner.spawn(0, 0, Box::new(TimedBehavior));
         runner.tick(0, &mut rng);
         // Timer at 1000 closes it; also deliver a stray message first.
         runner.route_message(10, 9, b"x");
@@ -354,7 +360,7 @@ mod tests {
             let mut rng = SeededRng::new(7);
             let mut actors = Vec::new();
             for _i in 0..8u64 {
-                let a = runner.spawn(0, Box::new(TimedBehavior));
+                let a = runner.spawn(0, 0, Box::new(TimedBehavior));
                 runner.subscribe(a, 100);
                 actors.push(a);
             }
@@ -407,7 +413,7 @@ mod tests {
 
         let mut runner = ActorRunner::new(64);
         let mut rng = SeededRng::new(11);
-        let actor = runner.spawn(0, Box::new(TwoTimerBehavior { fired: 0 }));
+        let actor = runner.spawn(0, 0, Box::new(TwoTimerBehavior { fired: 0 }));
         let t0 = runner.tick(0, &mut rng);
         assert_eq!(t0.started, 1);
         assert_eq!(runner.actor_state(actor), Some(ActorState::Waiting));

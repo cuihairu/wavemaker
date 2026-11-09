@@ -82,7 +82,7 @@ fn run_swell(actors: usize, seed: u64) -> SwellStats {
     let mut ticks = 0u64;
 
     for _ in 0..actors {
-        runner.spawn(now, Box::new(FourTimerBehavior::default()));
+        runner.spawn(now, now, Box::new(FourTimerBehavior::default()));
     }
     let target = runner.total_created();
     assert_eq!(target, actors as u64, "every spawn creates one actor");

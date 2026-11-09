@@ -57,18 +57,22 @@ impl LifecycleManager {
         Self::default()
     }
 
-    /// Create an actor planned to start at `planned_at_ns`.
+    /// Create an actor planned to start at `planned_at_ns`, observed at
+    /// `now_ns`.
     ///
-    /// Transitions `Idle -> Scheduled` (reason "arrival reached") and arms a
-    /// start timer. A `planned_at_ns` already in the past starts on the next
-    /// [`Self::fire_due`]. The planned-to-start deviation is measured at the
-    /// moment the actor actually starts, against `planned_at_ns`.
-    pub fn spawn(&mut self, planned_at_ns: u64) -> ActorId {
+    /// Transitions `Idle -> Scheduled` (reason "arrival reached") stamped at
+    /// `now_ns` — the audit trail records when the spawn was observed, never
+    /// a future planned time, so a pre-arrival drain stays monotonic — and
+    /// arms a start timer at `planned_at_ns`. A `planned_at_ns` already in
+    /// the past starts on the next [`Self::fire_due`]. The planned-to-start
+    /// deviation is measured when the actor actually starts, against
+    /// `planned_at_ns`.
+    pub fn spawn(&mut self, now_ns: u64, planned_at_ns: u64) -> ActorId {
         let id = ActorId(self.next_id);
         self.next_id += 1;
         let mut machine = ActorMachine::new();
         machine
-            .transition(ActorState::Scheduled, planned_at_ns, "arrival reached")
+            .transition(ActorState::Scheduled, now_ns, "arrival reached")
             .expect("Idle -> Scheduled is always legal");
         self.actors.insert(id, machine);
         self.planned_at.insert(id, planned_at_ns);
@@ -291,7 +295,7 @@ mod tests {
     #[test]
     fn spawn_schedules_start_and_marks_runnable_at_planned_time() {
         let mut lm = LifecycleManager::new();
-        let id = lm.spawn(100);
+        let id = lm.spawn(0, 100);
         assert_eq!(lm.actor_state(id), Some(ActorState::Scheduled));
         assert_eq!(lm.fire_due(99), 0, "not due yet");
         assert_eq!(lm.runnable_len(), 0);
@@ -305,7 +309,7 @@ mod tests {
     #[test]
     fn past_planned_time_starts_on_next_fire() {
         let mut lm = LifecycleManager::new();
-        let id = lm.spawn(100);
+        let id = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(150), 1);
         assert_eq!(lm.mean_planned_to_start_ns(), Some(50.0));
         assert_eq!(lm.max_planned_to_start_ns(), Some(50));
@@ -315,7 +319,7 @@ mod tests {
     #[test]
     fn on_time_spawn_has_zero_deviation() {
         let mut lm = LifecycleManager::new();
-        lm.spawn(100);
+        lm.spawn(0, 100);
         assert_eq!(lm.fire_due(100), 1);
         assert_eq!(lm.mean_planned_to_start_ns(), Some(0.0));
     }
@@ -323,7 +327,7 @@ mod tests {
     #[test]
     fn suspend_then_explicit_resume_requeues() {
         let mut lm = LifecycleManager::new();
-        let _ = lm.spawn(100);
+        let _ = lm.spawn(0, 100);
         lm.fire_due(100);
         let id = lm.dequeue_runnable().unwrap();
         lm.suspend(id, 120, "think timer armed").unwrap();
@@ -338,7 +342,7 @@ mod tests {
     #[test]
     fn resume_after_close_is_rejected() {
         let mut lm = LifecycleManager::new();
-        let _ = lm.spawn(100);
+        let _ = lm.spawn(0, 100);
         lm.fire_due(100);
         let id = lm.dequeue_runnable().unwrap();
         lm.suspend(id, 120, "block").unwrap();
@@ -353,7 +357,7 @@ mod tests {
     #[test]
     fn fail_reachable_from_running() {
         let mut lm = LifecycleManager::new();
-        let _ = lm.spawn(10);
+        let _ = lm.spawn(0, 10);
         lm.fire_due(10);
         let id = lm.dequeue_runnable().unwrap();
         lm.fail(id, 20, "behavior panicked").unwrap();
@@ -364,10 +368,10 @@ mod tests {
     #[test]
     fn drain_closes_all_nonterminal_and_clears_runnable() {
         let mut lm = LifecycleManager::new();
-        let _a = lm.spawn(10);
+        let _a = lm.spawn(0, 10);
         lm.fire_due(10);
         lm.dequeue_runnable();
-        let _b = lm.spawn(50);
+        let _b = lm.spawn(0, 50);
         lm.suspend(_a, 20, "block").unwrap();
         assert_eq!(lm.drain(1000), 2);
         assert_eq!(lm.actor_state(_a), Some(ActorState::Closed));
@@ -380,7 +384,7 @@ mod tests {
     fn peak_runnable_tracks_queue_high_water_mark() {
         let mut lm = LifecycleManager::new();
         for _ in 0..5u64 {
-            lm.spawn(100);
+            lm.spawn(0, 100);
         }
         lm.fire_due(100);
         assert_eq!(lm.runnable_len(), 5);
@@ -394,11 +398,11 @@ mod tests {
     #[test]
     fn mean_deviation_reflects_actual_start_times() {
         let mut lm = LifecycleManager::new();
-        lm.spawn(100);
+        lm.spawn(0, 100);
         assert_eq!(lm.fire_due(100), 1, "started on time: deviation 0");
-        lm.spawn(100);
+        lm.spawn(0, 100);
         assert_eq!(lm.fire_due(120), 1, "started 20ns late");
-        lm.spawn(100);
+        lm.spawn(0, 100);
         assert_eq!(lm.fire_due(130), 1, "started 30ns late");
         assert_eq!(lm.mean_planned_to_start_ns(), Some(50.0 / 3.0));
         assert_eq!(lm.max_planned_to_start_ns(), Some(30));
@@ -418,11 +422,35 @@ mod tests {
     }
 
     #[test]
+    fn draining_a_not_yet_arrived_actor_keeps_history_monotonic() {
+        let mut lm = LifecycleManager::new();
+        let id = lm.spawn(0, 1_000); // observed at 0, planned for 1_000
+                                     // Drain before the planned arrival: the audit trail must stay
+                                     // monotonic instead of panicking on a future-dated stamp.
+        assert_eq!(lm.drain(500), 1);
+        let stamps: Vec<u64> = lm
+            .actor_history(id)
+            .unwrap()
+            .iter()
+            .map(|t| t.at_ns)
+            .collect();
+        assert_eq!(
+            stamps.first(),
+            Some(&0),
+            "Scheduled stamped at the observation time"
+        );
+        assert!(
+            stamps.windows(2).all(|w| w[0] <= w[1]),
+            "timestamps monotonic, got {stamps:?}"
+        );
+    }
+
+    #[test]
     fn deterministic_replay_same_plan_same_outcome() {
         let run = || {
             let mut lm = LifecycleManager::new();
             for i in 0..10u64 {
-                lm.spawn(100 + i * 10);
+                lm.spawn(0, 100 + i * 10);
             }
             let mut started = 0;
             for now in [100u64, 150, 200, 250] {

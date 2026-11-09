@@ -162,3 +162,17 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [ ] WM-0609: Evaluate Docker / Podman launchers.
 - [ ] WM-0610: Evaluate a Lua Behavior SDK.
 - [ ] WM-0611: Evaluate Go / C++ / Python third-party SDK completeness.
+
+## 审核发现
+
+- [ ] 审核发现：被拒绝的 ApplyPlan 请求仍先覆盖 swell 绑定，导致之后的状态记录归属错误（crates/wm-worker/src/backend.rs:233）。
+- [ ] 审核发现：提前 drain 尚未到达的 actor 时，其 Scheduled 时间戳被设为未来的计划时间，导致单调时间断言触发并崩溃（crates/wm-runtime/src/lifecycle.rs:71）。
+- [ ] 审核发现：actor 关闭后未取消订阅且到期定时器仍会投递事件，后续消息和定时器会在无法运行的 actor 队列中持续累积（crates/wm-runtime/src/batch.rs:177）。
+- [ ] 审核发现：发送结果仅包含消息 ID 和载荷而丢失来源 actor，多个会话同时发送时无法将消息路由到各自的传输连接（crates/wm-runtime/src/batch.rs:193）。
+- [ ] 审核发现：planned-to-start 偏差在 actor 进入运行队列时计算而非行为实际执行时计算，批处理积压期间会低估启动延迟（crates/wm-runtime/src/lifecycle.rs:103）。
+- [ ] 审核发现：启动基准把进入队列的 actor 计为已执行，超过批次大小时首个 tick 即结束，未测量剩余 actor 的启动行为（crates/wm-runtime/benches/runtime.rs:123）。
+- [ ] 审核发现：取消未知的未来定时器 ID 会留下墓碑并静默取消后来分配相同 ID 的定时器，已触发 ID 的取消还会永久累积墓碑（crates/wm-runtime/src/scheduler.rs:97）。
+- [ ] 审核发现：超过直方图上限的延迟被静默丢弃而非截断或报告，长尾样本消失会低估延迟和计数（crates/wm-runtime/src/histogram.rs:41）。
+- [ ] 审核发现：TCP 对空缓冲区的读取返回零也被当作对端关闭，调用 recv 空切片即可错误地关闭仍然活跃的连接（crates/wm-runtime/src/tcp.rs:64）。
+- [ ] 审核发现：WorkerMetrics 没有接入调度器、行为执行或传输路径，实际运行时不会自动记录所需的调度和消息指标（crates/wm-runtime/src/metrics.rs:17）。
+- [ ] 审核发现：到达时间反演使用 ln(1+x) 导致极小间隔因浮点舍入归零，允许的高到达率下会产生重复时间戳并在调试构建触发断言（crates/wm-runtime/src/arrival.rs:125）。

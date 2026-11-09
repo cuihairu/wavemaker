@@ -1,6 +1,7 @@
 //! Wavemaker controller (WM-0104): Axum control-plane skeleton plus the
 //! `wavemaker.control.v1` gRPC server that workers register against.
 
+pub mod aggregation;
 pub mod backend_registry;
 pub mod capacity;
 pub mod config;
@@ -12,6 +13,10 @@ pub mod server;
 pub mod shard_plan;
 pub mod state;
 
+pub use aggregation::{
+    aggregate_metrics, AggregationError, AggregationIssue, BackendAggregate,
+    MetricsAggregation, WorkerMetrics,
+};
 pub use backend_registry::{
     BackendKind, BackendRecord, BackendRegistry, BackendRegistryError, BackendState,
     BackendTransition,

@@ -32,6 +32,7 @@ import functools
 import os
 import traceback
 
+from .bot_registry import collect_bot_snapshot
 from .capability import (
     ARRIVAL_BATCH_MS,
     CAPABILITIES,
@@ -312,6 +313,14 @@ class Bootstrap(object):
     def plans(self):
         """Plan state (accepted digest, running start id) for tests/status."""
         return self._plans
+
+    def bot_snapshot(self):
+        """Live bot census (WM-0208): `{bot_count, bot_ids, dead_ids}` on
+        the scripting thread, or None while the engine exposes no bots
+        mapping (uncollectable — never reported as a fake zero). addBots
+        failures are invisible to this side (audit §1/D1); a shortfall
+        shows up here as bot_count below the plan target."""
+        return collect_bot_snapshot(self._engine.bots)
 
     def _handle_command(self, command):
         ack = parse_handshake_ack(command)

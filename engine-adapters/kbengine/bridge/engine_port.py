@@ -46,6 +46,12 @@ class EnginePort(object):
         """Queue `total_count` more bot creations (cumulative, audit §1)."""
         return self._kb.addBots(total_count)
 
+    @property
+    def bots(self):
+        """The live `KBEngine.bots` PyBots mapping, or None when the engine
+        module exposes none (WM-0208 collection input)."""
+        return getattr(self._kb, "bots", None)
+
 
 class FakeEngine(object):
     """Scriptable stand-in for `KBEngine` in unit tests.
@@ -61,6 +67,7 @@ class FakeEngine(object):
         self.cancelled = []
         self.add_bots_calls = []
         self.bots_total = 0
+        self.bots = FakeBots()
 
     def callback(self, delay_seconds, fn):
         cid = self._next_id
@@ -93,3 +100,36 @@ class FakeEngine(object):
         ]
         for cid in due:
             self.fire(cid)
+
+
+class FakeBots(object):
+    """Scriptable stand-in for the PyBots mapping (audit §2 semantics).
+
+    Mirrors the real contract: int appID keys, read-only subscript
+    (assignment raises — mp_ass_subscript is NULL), keys() returns a fresh
+    snapshot list, live-subscript KeyError for unknown ids, and client
+    objects that may carry an `isDestroyed` flag.
+    """
+
+    def __init__(self):
+        self._clients = {}
+
+    def add(self, client_id, client=None):
+        if not isinstance(client_id, int) or isinstance(client_id, bool):
+            raise TypeError("appID keys are ints")
+        self._clients[client_id] = client if client is not None else object()
+
+    def remove(self, client_id):
+        self._clients.pop(client_id, None)
+
+    def keys(self):
+        return list(self._clients.keys())
+
+    def __len__(self):
+        return len(self._clients)
+
+    def __getitem__(self, client_id):
+        return self._clients[client_id]
+
+    def __setitem__(self, client_id, value):
+        raise TypeError("bots mapping is read-only (mp_ass_subscript NULL)")

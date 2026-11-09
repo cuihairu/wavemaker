@@ -24,8 +24,10 @@ use crate::scheduler::TimerScheduler;
 /// Everything one [`ActorRunner::tick`] produced.
 #[derive(Debug, Default)]
 pub struct TickOutcome {
-    /// Outbound messages the tick's behaviors requested: `(id, payload)`.
-    pub sends: Vec<(u32, Vec<u8>)>,
+    /// Outbound messages the tick's behaviors requested:
+    /// `(source actor, message id, payload)`. The source is what lets a
+    /// multi-session caller route each send to that session's transport.
+    pub sends: Vec<(ActorId, u32, Vec<u8>)>,
     /// Structured log lines the tick's behaviors emitted.
     pub logs: Vec<String>,
     /// Actors that started this tick (arrival reached).
@@ -197,11 +199,11 @@ impl ActorRunner {
         &mut self,
         actor: ActorId,
         effect: BehaviorEffect,
-        sends: &mut Vec<(u32, Vec<u8>)>,
+        sends: &mut Vec<(ActorId, u32, Vec<u8>)>,
         logs: &mut Vec<String>,
     ) {
         match effect {
-            BehaviorEffect::Send(id, payload) => sends.push((id, payload)),
+            BehaviorEffect::Send(id, payload) => sends.push((actor, id, payload)),
             BehaviorEffect::ArmTimer { id, at_ns } => {
                 self.timers.schedule(
                     at_ns,
@@ -317,7 +319,31 @@ mod tests {
         assert_eq!(woken, 1);
         let t1 = runner.tick(10, &mut rng);
         assert_eq!(t1.run, 1);
-        assert_eq!(t1.sends, vec![(5, b"ping".to_vec())]);
+        assert_eq!(t1.sends, vec![(actor, 5, b"ping".to_vec())]);
+    }
+
+    /// Two sessions (actors) sending on the same message id must produce
+    /// distinguishable sends: each entry names its source actor so the caller
+    /// can route it to that session's transport.
+    #[test]
+    fn sends_carry_the_source_actor() {
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(21);
+        let a = runner.spawn(0, 0, Box::new(EchoBehavior));
+        let b = runner.spawn(0, 0, Box::new(EchoBehavior));
+        runner.subscribe(a, 9);
+        runner.subscribe(b, 9);
+
+        runner.tick(0, &mut rng);
+        runner.route_message(10, 9, b"from-a");
+        let out = runner.tick(10, &mut rng);
+        let mut sends = out.sends;
+        sends.sort();
+        assert_eq!(
+            sends,
+            vec![(a, 9, b"from-a".to_vec()), (b, 9, b"from-a".to_vec()),],
+            "each send names its source actor"
+        );
     }
 
     #[test]

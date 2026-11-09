@@ -54,6 +54,11 @@ impl<T> PartialOrd for Entry<T> {
 pub struct TimerScheduler<T> {
     heap: BinaryHeap<Entry<T>>,
     cancelled: HashSet<u64>,
+    /// Seq ids currently in the heap. Mirrors `heap` so `cancel` can tell a
+    /// live timer from an already-fired or never-allocated one in O(1): only
+    /// live ids may be tombstoned, which keeps `cancelled` bounded by the
+    /// live population instead of growing forever on cancels of dead ids.
+    live_seqs: HashSet<u64>,
     next_seq: u64,
 }
 
@@ -62,6 +67,7 @@ impl<T> Default for TimerScheduler<T> {
         Self {
             heap: BinaryHeap::new(),
             cancelled: HashSet::new(),
+            live_seqs: HashSet::new(),
             next_seq: 0,
         }
     }
@@ -84,17 +90,27 @@ impl<T> TimerScheduler<T> {
             seq,
             payload,
         });
+        self.live_seqs.insert(seq);
         TimerId(seq)
     }
 
     /// Cancel a timer: later `expire` calls will never fire it.
     ///
-    /// Returns `false` only when the id is already marked cancelled. The
-    /// return value cannot report whether the timer already fired — handle
-    /// cancellation inherently races the fire — so callers doing cancel
-    /// accounting must keep their own bookkeeping instead of relying on it.
-    /// Cancelling unknown or already-fired ids is harmless.
+    /// Returns `false` when the id is not a cancellable live timer — never
+    /// allocated, already fired, or already cancelled — in which case no
+    /// tombstone is left behind. The return value cannot report whether a
+    /// timer already fired: handle cancellation inherently races the fire, so
+    /// callers doing cancel accounting must keep their own bookkeeping.
+    /// Cancelling a never-allocated id must not silence a later timer that
+    /// reuses the sequence, and cancelling a fired id must not accumulate
+    /// tombstones forever.
     pub fn cancel(&mut self, id: TimerId) -> bool {
+        if id.0 >= self.next_seq {
+            return false;
+        }
+        if !self.live_seqs.contains(&id.0) {
+            return false;
+        }
         self.cancelled.insert(id.0)
     }
 
@@ -118,6 +134,7 @@ impl<T> TimerScheduler<T> {
         let count = removed.len();
         for seq in removed {
             self.cancelled.remove(&seq);
+            self.live_seqs.remove(&seq);
         }
         count
     }
@@ -126,6 +143,13 @@ impl<T> TimerScheduler<T> {
     /// popped (an honest upper bound on live timers).
     pub fn heap_len(&self) -> usize {
         self.heap.len()
+    }
+
+    /// Number of cancellation tombstones currently pending. Bounded by the
+    /// live-timer population: tombstones are only ever created for ids still
+    /// in the heap and are removed when their entry pops.
+    pub fn cancelled_len(&self) -> usize {
+        self.cancelled.len()
     }
 
     /// Deadline of the next timer that would fire, skipping cancelled
@@ -137,6 +161,7 @@ impl<T> TimerScheduler<T> {
                 let entry = self.heap.pop();
                 debug_assert!(entry.is_some());
                 self.cancelled.remove(&seq);
+                self.live_seqs.remove(&seq);
                 continue;
             }
             return Some(top.deadline_ns);
@@ -157,6 +182,7 @@ impl<T> TimerScheduler<T> {
                 break;
             }
             let entry = self.heap.pop().expect("peeked entry exists");
+            self.live_seqs.remove(&entry.seq);
             if self.cancelled.remove(&entry.seq) {
                 continue;
             }
@@ -229,6 +255,39 @@ mod tests {
         sched.cancel(id);
         sched.expire(100, |_, _| fired += 1);
         assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn cancelling_an_unallocated_id_does_not_kill_a_later_timer() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        assert!(
+            !sched.cancel(TimerId(2)),
+            "a never-allocated id is not cancellable"
+        );
+        sched.schedule(10, 1); // seq 0
+        sched.schedule(20, 2); // seq 1
+        sched.schedule(30, 3); // seq 2 — the id the stray cancel targeted
+        let mut fired = Vec::new();
+        sched.expire(100, |_, p| fired.push(p));
+        assert_eq!(
+            fired,
+            vec![1, 2, 3],
+            "seq 2 must fire: the stale cancel must not inherit a later timer"
+        );
+    }
+
+    #[test]
+    fn cancelling_fired_and_unknown_ids_keeps_tombstone_set_empty() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        let id = sched.schedule(10, 7);
+        sched.expire(20, |_, _| {});
+        sched.cancel(id); // already fired
+        sched.cancel(TimerId(999)); // never allocated
+        assert_eq!(
+            sched.cancelled_len(),
+            0,
+            "no permanent tombstone accumulation"
+        );
     }
 
     #[test]

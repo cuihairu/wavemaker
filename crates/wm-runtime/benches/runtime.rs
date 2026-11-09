@@ -106,7 +106,13 @@ fn run_lifecycle(actors: usize) -> usize {
     events
 }
 
-/// Spawn and start `actors` actors (no timers), returning the count started.
+/// Spawn and start `actors` actors (no timers), returning the count of start
+/// behaviors actually executed.
+///
+/// The loop drains on `out.run`, not `out.started`: `fire_due` moves every
+/// due actor onto the runnable queue in one wave, but the batch budget caps
+/// how many behaviors actually run per tick — measuring the wave as "all
+/// started" would report one tick's work as the whole scale.
 fn run_start(actors: usize) -> usize {
     let mut runner = ActorRunner::new(BATCH_SIZE);
     let mut rng = SeededRng::new(7);
@@ -114,18 +120,22 @@ fn run_start(actors: usize) -> usize {
         runner.spawn(0, 0, Box::new(StartOnlyBehavior));
     }
 
-    let mut started = 0usize;
+    let mut executed = 0usize;
     let mut now = 0u64;
-    while started < actors {
+    while executed < actors {
         let out = runner.tick(now, &mut rng);
-        started += out.started;
+        executed += out.run;
         now = now.saturating_add(TICK_STEP_NS);
         assert!(
             now < TIMEOUT_NS,
             "start did not complete for {actors} actors"
         );
     }
-    started
+    assert_eq!(
+        executed, actors,
+        "every actor's start behavior must run exactly once"
+    );
+    executed
 }
 
 fn bench_lifecycle(c: &mut Criterion) {

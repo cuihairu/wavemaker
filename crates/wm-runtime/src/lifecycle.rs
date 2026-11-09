@@ -98,24 +98,16 @@ impl LifecycleManager {
         count
     }
 
-    /// Transition `Scheduled -> Running`, push onto the runnable queue, and
-    /// record the planned-to-start deviation. Returns whether it started.
+    /// Transition `Scheduled -> Running` and push onto the runnable queue.
+    /// Returns whether it started. The planned-to-start deviation is *not*
+    /// recorded here: it is measured when the behavior actually executes
+    /// ([`Self::record_first_run`]), so actors waiting behind the batch
+    /// budget accrue that wait.
     fn start(&mut self, aid: ActorId, now_ns: u64) -> bool {
         let started = match self.actors.get_mut(&aid) {
-            Some(machine) if machine.state() == ActorState::Scheduled => {
-                let ok = machine
-                    .transition(ActorState::Running, now_ns, "started")
-                    .is_ok();
-                if ok {
-                    if let Some(planned) = self.planned_at.get(&aid) {
-                        let deviation = now_ns.saturating_sub(*planned);
-                        self.planned_to_start_sum_ns += deviation as u128;
-                        self.planned_to_start_count += 1;
-                        self.planned_to_start_max_ns = self.planned_to_start_max_ns.max(deviation);
-                    }
-                }
-                ok
-            }
+            Some(machine) if machine.state() == ActorState::Scheduled => machine
+                .transition(ActorState::Running, now_ns, "started")
+                .is_ok(),
             _ => false,
         };
         if started {
@@ -123,6 +115,20 @@ impl LifecycleManager {
             self.peak_runnable = self.peak_runnable.max(self.runnable.len());
         }
         started
+    }
+
+    /// Record that the actor's behavior actually executed for the first time
+    /// at `now_ns` (the batch runner calls this when it delivers the
+    /// `Started` event). This is the measurement point of the
+    /// planned-to-start deviation against `planned_at_ns`. Unknown or
+    /// already-recorded actors are ignored.
+    pub fn record_first_run(&mut self, aid: ActorId, now_ns: u64) {
+        if let Some(planned) = self.planned_at.remove(&aid) {
+            let deviation = now_ns.saturating_sub(planned);
+            self.planned_to_start_sum_ns += deviation as u128;
+            self.planned_to_start_count += 1;
+            self.planned_to_start_max_ns = self.planned_to_start_max_ns.max(deviation);
+        }
     }
 
     /// Pop the next runnable actor (FIFO). The caller owns the actor until it
@@ -222,6 +228,8 @@ impl LifecycleManager {
             }
         }
         self.runnable.clear();
+        // Drained actors never execute, so their planned timestamps are dead.
+        self.planned_at.clear();
         self.total_closed += closed as u64;
         closed
     }
@@ -311,6 +319,9 @@ mod tests {
         let mut lm = LifecycleManager::new();
         let id = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(150), 1);
+        // The deviation is measured at first execution, not at queue time.
+        assert_eq!(lm.mean_planned_to_start_ns(), None);
+        lm.record_first_run(id, 150);
         assert_eq!(lm.mean_planned_to_start_ns(), Some(50.0));
         assert_eq!(lm.max_planned_to_start_ns(), Some(50));
         assert_eq!(lm.actor_state(id), Some(ActorState::Running));
@@ -319,8 +330,10 @@ mod tests {
     #[test]
     fn on_time_spawn_has_zero_deviation() {
         let mut lm = LifecycleManager::new();
-        lm.spawn(0, 100);
+        let id = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(100), 1);
+        assert_eq!(lm.mean_planned_to_start_ns(), None, "not executed yet");
+        lm.record_first_run(id, 100);
         assert_eq!(lm.mean_planned_to_start_ns(), Some(0.0));
     }
 
@@ -398,14 +411,32 @@ mod tests {
     #[test]
     fn mean_deviation_reflects_actual_start_times() {
         let mut lm = LifecycleManager::new();
-        lm.spawn(0, 100);
+        let a = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(100), 1, "started on time: deviation 0");
-        lm.spawn(0, 100);
+        let b = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(120), 1, "started 20ns late");
-        lm.spawn(0, 100);
+        let c = lm.spawn(0, 100);
         assert_eq!(lm.fire_due(130), 1, "started 30ns late");
+        // Execution (not queue push) is the measurement point.
+        assert_eq!(lm.mean_planned_to_start_ns(), None, "nothing executed yet");
+        lm.record_first_run(a, 100);
+        lm.record_first_run(b, 120);
+        lm.record_first_run(c, 130);
         assert_eq!(lm.mean_planned_to_start_ns(), Some(50.0 / 3.0));
         assert_eq!(lm.max_planned_to_start_ns(), Some(30));
+    }
+
+    #[test]
+    fn record_first_run_is_once_and_ignores_unknown_actors() {
+        let mut lm = LifecycleManager::new();
+        let id = lm.spawn(0, 100);
+        lm.fire_due(100);
+        lm.record_first_run(id, 200);
+        lm.record_first_run(id, 300); // second call ignored
+        assert_eq!(lm.mean_planned_to_start_ns(), Some(100.0));
+        assert_eq!(lm.max_planned_to_start_ns(), Some(100));
+        lm.record_first_run(ActorId(999), 500); // unknown actor ignored
+        assert_eq!(lm.mean_planned_to_start_ns(), Some(100.0));
     }
 
     #[test]

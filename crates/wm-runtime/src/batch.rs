@@ -140,11 +140,18 @@ impl ActorRunner {
     }
 
     fn run_one(&mut self, actor: ActorId, now_ns: u64, rng: &mut SeededRng, out: &mut TickOutcome) {
+        let first_run = !self.started.contains(&actor);
         let Some(event) = self.next_event_for(actor) else {
             // Runnable but with nothing to do: suspend rather than spin.
             let _ = self.lifecycle.suspend(actor, now_ns, "no event pending");
             return;
         };
+        if first_run {
+            // The behavior is about to execute for the first time: this is
+            // the honest measurement point for planned-to-start, after any
+            // wait in the runnable queue behind the batch budget.
+            self.lifecycle.record_first_run(actor, now_ns);
+        }
 
         let (decision, effects) = {
             let Some(behavior) = self.behaviors.get_mut(&actor) else {
@@ -524,5 +531,38 @@ mod tests {
             0,
             "far timer cancelled at close"
         );
+    }
+
+    /// The planned-to-start deviation is measured when the behavior actually
+    /// executes, not when the actor is pushed onto the runnable queue:
+    /// actors waiting behind the batch budget accrue that wait.
+    #[test]
+    fn planned_to_start_deviation_measures_actual_execution() {
+        struct WaitForeverBehavior;
+        impl Behavior for WaitForeverBehavior {
+            fn on_event(
+                &mut self,
+                _ctx: &mut BehaviorContext,
+                _event: &BehaviorEvent,
+            ) -> ActorDecision {
+                ActorDecision::Wait
+            }
+        }
+
+        let mut runner = ActorRunner::new(1); // one behavior per tick
+        let mut rng = SeededRng::new(17);
+        for _ in 0..3 {
+            runner.spawn(0, 100, Box::new(WaitForeverBehavior));
+        }
+
+        runner.tick(100, &mut rng); // queue all three, execute only the first
+        runner.tick(200, &mut rng);
+        assert_eq!(
+            runner.mean_planned_to_start_ns(),
+            Some(50.0),
+            "(0 + 100) / 2 — the third actor is still queued"
+        );
+        runner.tick(300, &mut rng);
+        assert_eq!(runner.mean_planned_to_start_ns(), Some(100.0));
     }
 }

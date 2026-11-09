@@ -2,16 +2,19 @@
 
 WM-0201. The bootstrap owns:
 
-  * the state machine (standby -> running -> stopped),
+  * the state machine (standby -> running -> ready/refused -> stopped),
   * the inbound command queue (IPC threads only enqueue; see command_queue),
   * the engine-callback pump that drains the queue on the scripting thread,
   * the injected configuration (Supervisor passes IPC address, token, Swell
-    ID, Backend ID — kbengine.md lifecycle step 3).
+    ID, Backend ID — kbengine.md lifecycle step 3),
+  * the handshake exchange (WM-0203): the first outbound message after the
+    IPC client connects; an OK ack moves the bridge to `ready`, a refusal
+    tears the session down (`refused`) without touching engine startup.
 
 IPC transport is owned by the local IPC client (WM-0202): with an injected
 address `on_init` starts it and `on_finish` closes it inline; without one the
 bootstrap stays in standby, so the engine can load it harmlessly while the
-rest of Phase 2 lands. The handshake itself is WM-0203.
+rest of Phase 2 lands.
 
 Constraints honoured here (docs/spec/kbengine-api-audit.md §8.3):
 
@@ -36,6 +39,7 @@ from .capability import (
     SCHEDULING_RESOLUTION_MS,
 )
 from .command_queue import CommandQueue
+from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 
 
@@ -87,10 +91,22 @@ class Bootstrap(object):
         self._state = "standby"
         self._events = []
         self._client = None
+        self._handshake_generation = 0
+        self._refusal_reason = ""
 
     @property
     def state(self):
         return self._state
+
+    @property
+    def handshake_generation(self):
+        """Generation the Supervisor assigned at handshake (0 before it)."""
+        return self._handshake_generation
+
+    @property
+    def refusal_reason(self):
+        """Stable Supervisor reason code after a handshake refusal."""
+        return self._refusal_reason
 
     @property
     def config(self):
@@ -145,6 +161,13 @@ class Bootstrap(object):
                 OutboundQueue(DEFAULT_OUTBOUND_LIMIT),
             )
             self._client.connect()
+            # The handshake is the first outbound message (WM-0203); send is
+            # a non-blocking enqueue, so on_init stays cheap on the engine
+            # thread. A failed connect leaves it unsent — the state stays
+            # `running` (handshake pending) and WM-0212's reconnection owns
+            # the retry.
+            if self._client.is_connected:
+                self._client.send_message(build_handshake(self.capability_report()))
         self._state = "running"
         self._arm_pump()
         return self._state
@@ -200,7 +223,10 @@ class Bootstrap(object):
             # succeeded, so log and keep the loop alive.
             traceback.print_exc()
         finally:
-            if self._state == "running":
+            # `ready` still has a live protocol session; `refused` has none
+            # (the client is torn down and no traffic can flow), so the pump
+            # ends there — the engine itself keeps running untouched.
+            if self._state in ("running", "ready"):
                 self._arm_pump()
 
     def drain_command_queue(self):
@@ -212,8 +238,30 @@ class Bootstrap(object):
         return len(commands)
 
     def _handle_command(self, command):
+        ack = parse_handshake_ack(command)
+        if ack is not None:
+            self._on_handshake_ack(*ack)
+            return
         # WM-0206+ dispatches real commands (ApplyPlan / Start / StopAdmission
         # / Drain / Shutdown) and routes results to the IPC sender. The
         # bootstrap only records, keeping the state machine honest until that
         # layer lands.
         self._events.append(command)
+
+    def _on_handshake_ack(self, accepted, generation, reason):
+        if not accepted:
+            # Startup refused (docs/bridge.md): no silent degradation — tear
+            # the client down inline (bounded join; pre-bots at this point,
+            # so the bounded stall is harmless) and go inert. The engine
+            # keeps running; a refusal must never crash bots (audit §5).
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+            if self._pump_id is not None:
+                self._engine.cancel(self._pump_id)
+                self._pump_id = None
+            self._state = "refused"
+            self._refusal_reason = reason
+            return
+        self._handshake_generation = generation
+        self._state = "ready"

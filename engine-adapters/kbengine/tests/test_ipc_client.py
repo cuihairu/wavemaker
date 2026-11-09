@@ -14,8 +14,10 @@ import tempfile
 import threading
 
 from bridge.bootstrap import Bootstrap, BootstrapConfig
+from bridge.capability import CAPABILITIES, PROTOCOL_VERSION
 from bridge.command_queue import CommandQueue
 from bridge.engine_port import EnginePort, FakeEngine
+from bridge.handshake import HANDSHAKE_ACK_KIND, build_handshake, parse_handshake_ack
 from bridge.ipc_client import (
     DEFAULT_OUTBOUND_LIMIT,
     IpcAddressError,
@@ -120,12 +122,17 @@ class LoopbackServer(object):
         self._conn.sendall(data)
 
     def close(self):
-        if self._conn is not None:
-            try:
-                self._conn.close()
-            except OSError:
-                pass
-        self._sock.close()
+        # The client's connect() returns once the kernel completes the
+        # handshake, which can happen before the accept thread has stored
+        # the connection: join it first, then close whatever exists, or a
+        # peer-disconnect test waits on a FIN that never arrives.
+        self._accept_thread.join(2.0)
+        for sock in (self._conn, self._sock):
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
 
 
 # -- address parsing -------------------------------------------------------
@@ -512,9 +519,15 @@ def test_bootstrap_wires_ipc_client_lifecycle():
         assert b.client.is_connected
         assert b.on_init(0) == "running", "second init guarded (S6), returns state"
 
+        # WM-0203: the handshake is the automatic first outbound frame.
+        first = server.recv_frame()
+        assert first["kind"] == "handshake"
+        assert first["protocol_version"] == PROTOCOL_VERSION
+        assert first["backend_id"] == "be"
+
         # Outbound path through the bootstrap.
-        assert b.send_message({"kind": "handshake"})
-        assert server.recv_frame()["kind"] == "handshake"
+        assert b.send_message({"kind": "get_status"})
+        assert server.recv_frame()["kind"] == "get_status"
 
         # Inbound path reaches the pump through the shared queue.
         server.send_message({"command_name": "apply_plan"})
@@ -527,11 +540,11 @@ def test_bootstrap_wires_ipc_client_lifecycle():
         # Poll: the sender's `sent` bump can lag the server's frame receipt.
         deadline = 200
         stats = b.ipc_stats()
-        while (stats["sent"] < 1 or stats["received"] < 1) and deadline:
+        while (stats["sent"] < 2 or stats["received"] < 1) and deadline:
             deadline -= 1
             threading.Event().wait(0.01)
             stats = b.ipc_stats()
-        assert stats["sent"] == 1 and stats["received"] == 1
+        assert stats["sent"] == 2 and stats["received"] == 1
 
         # on_finish is synchronous and tears the client down inline.
         assert b.on_finish() == "stopped"
@@ -557,3 +570,118 @@ def test_bootstrap_on_init_survives_unreachable_ipc():
     assert b.client.stats()["connect_errors"] == 1
     assert len(fe.scheduled) == 1, "pump still armed"
     assert b.on_finish() == "stopped"
+
+
+# -- WM-0203: handshake and capability report -------------------------------
+
+
+def ack(code="OK", generation=7, reason_code=""):
+    """Supervisor-side handshake ack, mirroring EngineHandshakeAck."""
+    result = {"code": code}
+    if reason_code:
+        result["reason_code"] = reason_code
+    return {"kind": HANDSHAKE_ACK_KIND, "result": result, "generation": generation}
+
+
+def test_handshake_payload_mirrors_proto_and_capability_report():
+    report = {
+        "protocol_version": PROTOCOL_VERSION,
+        "engine_name": "kbengine",
+        "engine_version": "9.9-test",
+        "adapter_name": "wavemaker-kbengine-bridge",
+        "adapter_version": "0.1.0",
+        "backend_id": "be-1",
+        "capabilities": CAPABILITIES,
+        "scheduling_resolution_ms": 100,
+        "arrival_batch_ms": 1000,
+    }
+    hs = build_handshake(report)
+    assert hs["kind"] == "handshake"
+    assert hs["protocol_version"] == PROTOCOL_VERSION == 1
+    assert hs["capabilities"] is CAPABILITIES, "honest catalog by reference"
+    assert hs["engine_version"] == "9.9-test"
+    # No invented fields: everything comes from the report.
+    assert set(hs) == set(report) | {"kind"}
+
+
+def test_parse_ack_accepts_only_ok_and_shaped_messages():
+    assert parse_handshake_ack(ack()) == (True, 7, "")
+    refused = parse_handshake_ack(ack("UNSUPPORTED", 0, "protocol_version"))
+    assert refused == (False, 0, "protocol_version")
+    # Non-ack messages -> None (caller records; S3: never raises).
+    assert parse_handshake_ack({"kind": "apply_plan"}) is None
+    assert parse_handshake_ack("garbage") is None
+    # Malformed result block: refused with a stable local reason.
+    assert parse_handshake_ack({"kind": HANDSHAKE_ACK_KIND, "result": "x"}) == (
+        False,
+        0,
+        "malformed_ack",
+    )
+
+
+def test_handshake_exchange_accepts_to_ready():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, backend="be-3")
+    try:
+        b.on_init(0)
+        hs = server.recv_frame()
+        assert hs["kind"] == "handshake"
+        assert hs["capabilities"]["scheduling"]["exact_arrival"] == "degraded"
+
+        server.send_message(ack(generation=42))
+        deadline = 100
+        while b.queue.pending() == 0 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        engine.fire(b.pump_id)  # pump consumes the ack on the scripting thread
+        assert b.state == "ready"
+        assert b.handshake_generation == 42
+        assert len(engine.scheduled) == 1, "pump keeps running in ready"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_handshake_refusal_refuses_startup_without_crashing_engine():
+    # docs/bridge.md: version mismatch refuses startup — no silent
+    # degradation. The bridge goes inert; the engine keeps running (audit §5).
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        b.on_init(0)
+        assert server.recv_frame()["kind"] == "handshake"
+        server.send_message(ack("UNSUPPORTED", 0, "protocol_version"))
+        deadline = 100
+        while b.queue.pending() == 0 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        engine.fire(b.pump_id)
+        assert b.state == "refused"
+        assert b.refusal_reason == "protocol_version"
+        assert b.client is None, "session torn down"
+        assert not b.send_message({"x": 1}), "no traffic after refusal"
+        assert not engine.scheduled, "pump stopped: nothing can flow"
+        # The engine is untouched and finish still works.
+        assert b.on_finish() == "stopped"
+    finally:
+        server.close()
+
+
+def test_unknown_inbound_messages_are_recorded_not_fatal():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        b.on_init(0)
+        server.recv_frame()  # drain the handshake
+        server.send_message({"kind": "something_new", "v": 1})
+        deadline = 100
+        while b.queue.pending() == 0 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        engine.fire(b.pump_id)
+        assert b.state == "running", "unknown kinds never move the machine"
+        assert b._events == [{"kind": "something_new", "v": 1}]
+        assert len(engine.scheduled) == 1, "pump survives (S3 discipline)"
+    finally:
+        b.on_finish()
+        server.close()

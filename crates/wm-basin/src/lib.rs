@@ -33,6 +33,7 @@ pub mod preflight;
 pub mod provider;
 pub mod quality;
 pub mod scheduler;
+pub mod server;
 pub mod timestamps;
 pub mod topology;
 
@@ -55,6 +56,9 @@ pub use provider::{
 pub use scheduler::{
     scheduler_from_interval, entry_of, failed_queries, CollectedOutcome,
     CollectedQuery, QueryScheduler, ScheduledQuery,
+};
+pub use server::{
+    aggregate_collected, aggregate_series, MetricAggregate, SampleSpan,
 };
 pub use timestamps::{
     compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata,

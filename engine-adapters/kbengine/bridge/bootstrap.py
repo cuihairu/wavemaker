@@ -39,6 +39,7 @@ from .capability import (
     PROTOCOL_VERSION,
     SCHEDULING_RESOLUTION_MS,
 )
+from .connection_events import ConnectionCollector
 from .command_queue import CommandQueue
 from .commands import CommandDispatcher, parse_command
 from .handshake import build_handshake, parse_handshake_ack
@@ -121,6 +122,7 @@ class Bootstrap(object):
         self._plans = PlanState(config.swell_id, SCHEDULING_RESOLUTION_MS)
         self._dispatcher.set_handler("apply_plan", self._on_apply_plan)
         self._dispatcher.set_handler("start", self._on_start)
+        self._connections = ConnectionCollector()
 
     @property
     def state(self):
@@ -252,6 +254,10 @@ class Bootstrap(object):
             # Batch plan execution rides the same pump tick: due batches
             # become one addBots call each, on the scripting thread (S1).
             self.execute_due_batches()
+            # Connection events (WM-0209): diff the bots keys() snapshot
+            # once per tick; raw records buffer for the event layer
+            # (WM-0213 owns the wire envelope and sequencing).
+            self._connections.poll(self._engine.bots)
         except Exception:
             # S3: a script exception is printed and swallowed by the engine;
             # the bridge state machine must not depend on a callback having
@@ -321,6 +327,14 @@ class Bootstrap(object):
         failures are invisible to this side (audit §1/D1); a shortfall
         shows up here as bot_count below the plan target."""
         return collect_bot_snapshot(self._engine.bots)
+
+    def take_connection_events(self):
+        """Drain buffered raw connection events (WM-0209 collection; the
+        event layer turns these into the sequenced wire envelope,
+        WM-0213). Login-state events are not produced: the ClientObject
+        state/event surface is runtime-verification pending (audit §2,
+        capability catalog keeps login_success unknown)."""
+        return self._connections.take_events()
 
     def _handle_command(self, command):
         ack = parse_handshake_ack(command)

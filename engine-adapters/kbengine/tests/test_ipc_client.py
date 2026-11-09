@@ -16,6 +16,12 @@ import threading
 from bridge.bootstrap import Bootstrap, BootstrapConfig
 from bridge.capability import CAPABILITIES, PROTOCOL_VERSION
 from bridge.command_queue import CommandQueue
+from bridge.commands import (
+    RESULT_OK,
+    RESULT_UNSUPPORTED,
+    build_command_result,
+    parse_command,
+)
 from bridge.engine_port import EnginePort, FakeEngine
 from bridge.handshake import HANDSHAKE_ACK_KIND, build_handshake, parse_handshake_ack
 from bridge.ipc_client import (
@@ -688,6 +694,163 @@ def test_unknown_inbound_messages_are_recorded_not_fatal():
         assert b.state == "running", "unknown kinds never move the machine"
         assert b._events == [{"kind": "something_new", "v": 1}]
         assert len(engine.scheduled) == 1, "pump survives (S3 discipline)"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+# -- command dispatch (WM-0206) --------------------------------------------
+
+def command(op="op-1", generation=42, name="start", payload=None):
+    return {
+        "kind": "command",
+        "operation_id": op,
+        "generation": generation,
+        "command_name": name,
+        "payload": payload,
+    }
+
+
+def wait_command(b, engine):
+    """Wait for an inbound command to reach the queue, then pump it."""
+    deadline = 100
+    while b.queue.pending() == 0 and deadline:
+        deadline -= 1
+        threading.Event().wait(0.01)
+    engine.fire(b.pump_id)
+
+
+def complete_handshake(server, engine, b, generation=42):
+    b.on_init(0)
+    server.recv_frame()  # drain the handshake
+    server.send_message(ack(generation=generation))
+    wait_command(b, engine)
+    assert b.state == "ready"
+
+
+def test_parse_command_shapes_mirroring_proto():
+    assert parse_command(command(payload={"shard": [1, 2]})) == (
+        "op-1", 42, "start", {"shard": [1, 2]},
+    )
+    # Proto3 defaults for missing fields; only `kind` identifies the message.
+    assert parse_command({"kind": "command"}) == ("", 0, "", None)
+    # Non-command shapes -> None (S3: never raises into the pump).
+    assert parse_command({"kind": "handshake_ack"}) is None
+    assert parse_command({"kind": "command", "generation": True})[1] == 0
+    assert parse_command({"kind": "command", "generation": "7"})[1] == 0
+    assert parse_command({"kind": "command", "operation_id": 9})[0] == ""
+    assert parse_command("garbage") is None
+    assert parse_command(None) is None
+
+
+def test_command_result_mirrors_proto_envelope():
+    r = build_command_result("op-9", 42, RESULT_OK)
+    assert r["kind"] == "command_result"
+    assert r["operation_id"] == "op-9"
+    assert r["generation"] == 42
+    assert r["result"] == {
+        "code": "OK", "reason_code": "", "detail": "", "generation": 42,
+    }
+    err = build_command_result(
+        "op-9", 42, RESULT_UNSUPPORTED, "unknown_command", "detail text")
+    assert err["result"]["code"] == "UNSUPPORTED"
+    assert err["result"]["reason_code"] == "unknown_command"
+    assert err["result"]["detail"] == "detail text"
+
+
+def test_command_before_handshake_is_failed_precondition():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        b.on_init(0)
+        server.recv_frame()  # handshake sent, ack not yet
+        server.send_message(command(generation=1))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["kind"] == "command_result"
+        assert result["operation_id"] == "op-1"
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "not_ready"
+        assert b.state == "running", "failed command never moves the machine"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_stale_generation_command_is_rejected_and_fresh_one_accepted():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    seen = []
+    b.set_command_handler("start", seen.append)
+    try:
+        complete_handshake(server, engine, b, generation=42)
+        server.send_message(command(op="old", generation=7))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "stale_generation"
+        assert result["generation"] == 42, "result carries assigned generation"
+        assert seen == [], "stale command never reached the handler"
+
+        server.send_message(command(op="fresh", generation=42, payload={"n": 1}))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "OK"
+        assert seen == [{"n": 1}], "current-generation command dispatched"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_unknown_command_name_is_unsupported_not_silent():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(name="nope"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "UNSUPPORTED"
+        assert result["result"]["reason_code"] == "unknown_command"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_handler_runs_on_scripting_thread_and_reports_errors():
+    # docs/bridge.md §Command Queue: commands execute on the engine
+    # callback (scripting) thread; the test thread pumps, so the handler's
+    # thread identity must match whoever fired the pump.
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    marker = {}
+    b.set_command_handler("start", lambda p: marker.update(
+        payload=p, thread=threading.get_ident()))
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(payload={"bots": 5}))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "OK"
+        assert marker["payload"] == {"bots": 5}
+        assert marker["thread"] == threading.get_ident()
+
+        # A raising handler becomes INTERNAL, never an escaped exception;
+        # the pump rearms and the next command still dispatches.
+        b.set_command_handler("start", lambda p: 1 / 0)
+        server.send_message(command(op="op-2"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["operation_id"] == "op-2"
+        assert result["result"]["code"] == "INTERNAL"
+        assert result["result"]["reason_code"] == "handler_error"
+        assert "ZeroDivisionError" in result["result"]["detail"]
+
+        b.set_command_handler("start", lambda p: None)
+        server.send_message(command(op="op-3"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        assert len(engine.scheduled) == 1, "pump survived the handler error"
     finally:
         b.on_finish()
         server.close()

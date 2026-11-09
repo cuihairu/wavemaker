@@ -39,6 +39,7 @@ from .capability import (
     SCHEDULING_RESOLUTION_MS,
 )
 from .command_queue import CommandQueue
+from .commands import CommandDispatcher, parse_command
 from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 
@@ -112,6 +113,9 @@ class Bootstrap(object):
         self._client = None
         self._handshake_generation = 0
         self._refusal_reason = ""
+        self._dispatcher = CommandDispatcher(
+            self._send_command_result, lambda: self._handshake_generation
+        )
 
     @property
     def state(self):
@@ -260,15 +264,30 @@ class Bootstrap(object):
             self._handle_command(command)
         return len(commands)
 
+    def set_command_handler(self, command_name, handler):
+        """Register the handler for one command name (WM-0207+: ApplyPlan /
+        Start / StopAdmission / Drain / Shutdown). The handler runs inline on
+        the scripting thread when its command is pumped."""
+        self._dispatcher.set_handler(command_name, handler)
+
+    def _send_command_result(self, result):
+        # Non-blocking enqueue to the IPC sender (S2); False on
+        # standby/dropped — the dispatch layer has already built the result,
+        # so there is nothing further to do here.
+        if self._client is not None:
+            self._client.send_message(result)
+
     def _handle_command(self, command):
         ack = parse_handshake_ack(command)
         if ack is not None:
             self._on_handshake_ack(*ack)
             return
-        # WM-0206+ dispatches real commands (ApplyPlan / Start / StopAdmission
-        # / Drain / Shutdown) and routes results to the IPC sender. The
-        # bootstrap only records, keeping the state machine honest until that
-        # layer lands.
+        parsed = parse_command(command)
+        if parsed is not None:
+            # WM-0206: routed to the registered handler (or a stable error
+            # result) and the EngineCommandResult goes back over IPC.
+            self._dispatcher.dispatch(parsed)
+            return
         self._events.append(command)
 
     def _on_handshake_ack(self, accepted, generation, reason):

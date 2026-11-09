@@ -17,6 +17,7 @@ pub mod clock;
 pub mod codec;
 pub mod dispatch;
 pub mod framing;
+pub mod histogram;
 pub mod lifecycle;
 pub mod metrics;
 pub mod rng;

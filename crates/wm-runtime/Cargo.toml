@@ -10,3 +10,8 @@ wm-core.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "runtime"
+harness = false

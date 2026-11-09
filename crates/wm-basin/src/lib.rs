@@ -27,6 +27,7 @@ pub mod correlation;
 pub mod environment;
 pub mod mapping;
 pub mod observability;
+pub mod overhead;
 pub mod preflight;
 pub mod provider;
 pub mod quality;
@@ -65,6 +66,10 @@ pub use preflight::{
 pub use environment::Environment;
 pub use observability::{
     ObservabilityConfig, ProviderKind, UnavailablePolicy,
+};
+pub use overhead::{
+    can_enable, grant_l2, observe_overhead, DegradationEvent,
+    EnablementDecision, L2Grant, OverheadPolicy,
 };
 pub use topology::Topology;
 

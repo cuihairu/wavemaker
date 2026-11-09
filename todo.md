@@ -150,7 +150,7 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 <!-- 仅在 v1 产品形态需要时启动 / Only start when the v1 product form requires it. -->
 
-- [ ] WM-0600: Decide the desktop surface (native shell + web view vs web-only). *(用户 2026-11-08 问「桌面界面没有设计」——先拍板形态再启动 Phase 6；候选：Tauri(原生壳+WebView)/Electron/纯 Web 仪表盘；推荐 Tauri——体积小、Rust 后端可直接调 controller)*
+- [ ] WM-0600: Decide the desktop surface (native shell + web view vs web-only). *(用户 2026-11-08 问「桌面界面没有设计」——先拍板形态再启动 Phase 6；候选：Tauri(原生壳+WebView)/Electron/纯 Web 仪表盘；推荐 Tauri——体积小、Rust 后端可直接调 controller)* **(BLOCKED——缺用户决策：桌面形态未拍板。Phase 6 全部子项（WM-0601..0611）的视图实现依赖此形态选择，在其拍板前无法诚实开工；需用户给出形态结论（Tauri/Electron/纯 Web）后解除)**
 - [ ] WM-0601: Implement Swell list and detail views.
 - [ ] WM-0602: Implement Backend / Worker status pages.
 - [ ] WM-0603: Implement Spectrum editing and validation display.

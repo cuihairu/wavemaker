@@ -8,11 +8,16 @@ bridge-side v1 payload shape:
     {
       "swell_id": "sw-1",
       "plan_digest": "sha256:...",
+      "shard_id": "shard-3",
       "batches": [
         {"offset_ms": 0,    "bot_count": 10},
         {"offset_ms": 1000, "bot_count": 20}
       ]
     }
+
+`shard_id` is optional (default ""): the Supervisor knows which shard it
+assigned, and events carry the shard attribution from the accepted plan
+(docs/bridge.md event envelope).
 
 `apply` validates and accepts the plan; `start` maps the accepted plan onto
 the engine; `due_batches` yields the bot counts whose time bucket has
@@ -58,6 +63,7 @@ REASON_CONFLICTING_PLAN = "conflicting_plan"
 REASON_PLAN_NOT_ACCEPTED = "plan_not_accepted"
 REASON_ALREADY_RUNNING = "already_running"
 REASON_ADMISSION_STOPPED = "admission_stopped"
+REASON_BAD_SHARD_ID = "bad_shard_id"
 
 
 def _is_int(value):
@@ -117,9 +123,16 @@ def parse_plan_payload(payload, resolution_ms):
             )
         bucket = offset // resolution_ms
         buckets[bucket] = buckets.get(bucket, 0) + count
+    shard_id = payload.get("shard_id", "")
+    if shard_id is None:
+        shard_id = ""
+    if not isinstance(shard_id, str):
+        return _fail("INVALID_ARGUMENT", REASON_BAD_SHARD_ID,
+                     "shard_id must be a string when present")
     return {
         "swell_id": swell_id,
         "plan_digest": digest,
+        "shard_id": shard_id,
         "buckets": sorted(buckets.items()),
     }
 
@@ -134,6 +147,7 @@ class PlanState(object):
         self._clock = time.monotonic if clock is None else clock
         self._state = "idle"
         self._digest = ""
+        self._shard_id = ""
         self._buckets = []
         self._start_operation_id = ""
         self._started_at = 0.0
@@ -147,6 +161,11 @@ class PlanState(object):
     @property
     def plan_digest(self):
         return self._digest
+
+    @property
+    def shard_id(self):
+        """Shard attribution from the accepted plan ("" when none)."""
+        return self._shard_id
 
     @property
     def start_operation_id(self):
@@ -181,6 +200,7 @@ class PlanState(object):
                     self._digest, digest),
             )
         self._digest = digest
+        self._shard_id = parsed["shard_id"]
         self._buckets = parsed["buckets"]
         self._state = "plan_accepted"
         return OK

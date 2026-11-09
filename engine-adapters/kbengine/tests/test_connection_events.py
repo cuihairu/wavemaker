@@ -97,8 +97,15 @@ def test_bootstrap_polls_connection_events_on_pump():
     fe.fire(b.pump_id)  # baseline tick
     fe.bots.add(77)
     fe.fire(b.pump_id)  # diff tick
-    events = b.take_connection_events()
-    assert len(events) == 1
-    assert events[0]["event_type"] == EVENT_BOT_CREATED
-    assert events[0]["bot_id"] == 77
+    # WM-0213: the pump drains the raw records into the event stream, so
+    # they surface as sequenced envelopes, not raw records. This standby
+    # config has no IPC client, so the tick's batch was undeliverable —
+    # the envelope stays in the replay window (cursor resume is the
+    # durable path).
+    assert b.take_connection_events() == []
+    assert b.event_stream.last_sequence == 1
+    b.event_stream.request_replay(0)
+    replay = b.event_stream.build_replay_if_requested()
+    assert replay["events"][0]["event_type"] == EVENT_BOT_CREATED
+    assert replay["events"][0]["bot_id"] == 77
     b.on_finish()

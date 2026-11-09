@@ -44,6 +44,7 @@ from .capability import (
 from .connection_events import ConnectionCollector
 from .command_queue import CommandQueue
 from .commands import CommandDispatcher, parse_command
+from .event_stream import EventStream
 from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 from .lifecycle import BackendLifecycle
@@ -143,7 +144,15 @@ class Bootstrap(object):
         self._dispatcher.set_handler("stop_admission", self._on_stop_admission)
         self._dispatcher.set_handler("drain", self._on_drain)
         self._dispatcher.set_handler("shutdown", self._on_shutdown)
+        self._dispatcher.set_handler(
+            "subscribe_events", self._on_subscribe_events)
         self._connections = ConnectionCollector()
+        # WM-0213: event sequencing + replay window. shard_id attribution
+        # follows the accepted plan live (events after apply_plan carry it).
+        self._event_stream = EventStream(
+            config.backend_id, config.swell_id,
+            lambda: self._plans.shard_id,
+        )
         self._lifecycle = BackendLifecycle()
         self._shutdown_requested = False
         self._shutdown_deferred = False
@@ -354,9 +363,22 @@ class Bootstrap(object):
             # become one addBots call each, on the scripting thread (S1).
             self.execute_due_batches()
             # Connection events (WM-0209): diff the bots keys() snapshot
-            # once per tick; raw records buffer for the event layer
-            # (WM-0213 owns the wire envelope and sequencing).
+            # once per tick; raw records flow through the event stream
+            # (WM-0213) into sequenced wire envelopes.
             self._connections.poll(self._engine.bots)
+            # WM-0213: the requested replay (subscribe_events) goes out
+            # first — it covers the window as of this tick — then this
+            # tick's fresh events ride their own batch (no overlap).
+            # send_message is a non-blocking enqueue; an unsent batch is
+            # dropped but its envelopes stay in the replay window, so the
+            # cursor resume remains the durable delivery path.
+            replay = self._event_stream.build_replay_if_requested()
+            if replay is not None:
+                self.send_message(replay)
+            batch = self._event_stream.build_batch(
+                self._event_stream.assign(self.take_connection_events()))
+            if batch is not None:
+                self.send_message(batch)
             # WM-0212: the pending handshake goes out here (covers both the
             # post-reconnect re-handshake and a Supervisor that appeared
             # after on_init), and the heartbeat keeps the session visibly
@@ -442,6 +464,18 @@ class Bootstrap(object):
             self._shutdown_requested = True
         return result
 
+    def _on_subscribe_events(self, payload, operation_id):
+        # WM-0213: cursor resume (docs/bridge.md). The cursor is the highest
+        # sequence the Supervisor has durably processed; missing/zero
+        # replays from the window start. The replay batch itself goes out
+        # from the next pump tick (protocol sends stay on the pump).
+        cursor = payload.get("cursor", 0) if isinstance(payload, dict) else 0
+        if not isinstance(cursor, int) or isinstance(cursor, bool) or cursor < 0:
+            return ("INVALID_ARGUMENT", "bad_cursor",
+                    "cursor must be a non-negative int")
+        self._event_stream.request_replay(cursor)
+        return None
+
     @property
     def lifecycle(self):
         """Backend lifecycle state (active/draining/stopped)."""
@@ -463,6 +497,11 @@ class Bootstrap(object):
     def plans(self):
         """Plan state (accepted digest, running start id) for tests/status."""
         return self._plans
+
+    @property
+    def event_stream(self):
+        """Event stream (WM-0213): sequence/replay state for tests/status."""
+        return self._event_stream
 
     def bot_snapshot(self):
         """Live bot census (WM-0208): `{bot_count, bot_ids, dead_ids}` on

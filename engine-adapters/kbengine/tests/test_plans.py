@@ -11,8 +11,8 @@ from bridge.plans import (
 )
 
 
-def plan(swell_id="sw-1", digest="sha256:abc", batches=None):
-    return {
+def plan(swell_id="sw-1", digest="sha256:abc", batches=None, shard_id=None):
+    payload = {
         "swell_id": swell_id,
         "plan_digest": digest,
         "batches": batches
@@ -22,6 +22,9 @@ def plan(swell_id="sw-1", digest="sha256:abc", batches=None):
             {"offset_ms": 300, "bot_count": 20},
         ],
     }
+    if shard_id is not None:
+        payload["shard_id"] = shard_id
+    return payload
 
 
 class FakeClock(object):
@@ -55,6 +58,12 @@ def test_parse_rejects_malformed_payloads_with_stable_reasons():
           "batches": [{"offset_ms": True, "bot_count": 1}]}, "bad_batch"),
         ({"swell_id": "sw", "plan_digest": "d",
           "batches": [{"offset_ms": 0.5, "bot_count": 1}]}, "bad_batch"),
+        ({"swell_id": "sw", "plan_digest": "d",
+          "batches": [{"offset_ms": 0, "bot_count": 1}], "shard_id": 3},
+         "bad_shard_id"),
+        ({"swell_id": "sw", "plan_digest": "d",
+          "batches": [{"offset_ms": 0, "bot_count": 1}], "shard_id": ["s"]},
+         "bad_shard_id"),
     ]
     for payload, reason in cases:
         result = parse_plan_payload(payload, 100)
@@ -79,6 +88,17 @@ def test_parse_quantizes_and_coalesces_onto_resolution_buckets():
     assert parsed["buckets"] == [(0, 12), (2, 9), (9, 1)]
     assert parsed["swell_id"] == "sw-1"
     assert parsed["plan_digest"] == "sha256:abc"
+    assert parsed["shard_id"] == "", "shard_id absent -> empty string"
+
+
+def test_parse_shard_id_normalizes_to_string_attribution():
+    # Absent / explicit null -> ""; a string is carried verbatim (the
+    # Supervisor knows the shard it assigned; events carry the plan's
+    # attribution, docs/bridge.md event envelope).
+    assert parse_plan_payload(plan(), 100)["shard_id"] == ""
+    assert parse_plan_payload(plan(shard_id=None), 100)["shard_id"] == ""
+    assert parse_plan_payload(
+        plan(shard_id="shard-3"), 100)["shard_id"] == "shard-3"
 
 
 def test_apply_accepts_and_stores_the_frozen_plan():
@@ -87,6 +107,14 @@ def test_apply_accepts_and_stores_the_frozen_plan():
     assert ps.apply(plan()) == OK
     assert ps.state == "plan_accepted"
     assert ps.plan_digest == "sha256:abc"
+    assert ps.shard_id == "", "no attribution in the plan -> empty shard"
+
+
+def test_apply_stores_the_plan_shard_attribution():
+    ps = PlanState("sw-1", 100)
+    assert ps.shard_id == ""
+    assert ps.apply(plan(shard_id="shard-3")) == OK
+    assert ps.shard_id == "shard-3", "events carry the plan's shard"
 
 
 def test_apply_is_idempotent_for_the_same_digest():

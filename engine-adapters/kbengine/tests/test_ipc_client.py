@@ -1284,3 +1284,158 @@ def test_heartbeat_keeps_the_session_visibly_alive():
     finally:
         b.on_finish()
         server.close()
+
+
+# -- event sequencing and cursor replay (WM-0213) ---------------------------
+
+from bridge.connection_events import EVENT_BOT_CREATED  # noqa: E402
+
+SHARD_PLAN = dict(VALID_PLAN, plan_digest="sha256:shard",
+                  shard_id="shard-3")
+
+
+def recv_events_batch(server):
+    """Next `events` message from the wire, skipping heartbeat frames."""
+    while True:
+        message = server.recv_frame()
+        if message.get("kind") == "events":
+            return message
+
+
+def test_connection_events_flow_as_sequenced_batches_over_the_wire():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7",
+                               backend="kb-1")
+    try:
+        complete_handshake(server, engine, b)
+        engine.fire(b.pump_id)  # baseline tick (no events yet)
+        engine.bots.add(501)
+        engine.fire(b.pump_id)  # diff tick -> unsolicited batch
+        batch = recv_events_batch(server)
+        assert batch["backend_id"] == "kb-1"
+        assert batch["cursor"] == 1, "cursor is the batch's max sequence"
+        envelope = batch["events"][0]
+        for field in ("event_id", "backend_id", "swell_id", "shard_id",
+                      "bot_id", "sequence", "source_timestamp",
+                      "observed_timestamp", "event_type", "payload",
+                      "schema_version"):
+            assert field in envelope, f"envelope lacks {field}"
+        assert envelope["event_id"] == "kb-1:1"
+        assert envelope["sequence"] == 1
+        assert envelope["swell_id"] == "sw-7"
+        assert envelope["shard_id"] == "", "no plan accepted -> empty shard"
+        assert envelope["bot_id"] == 501
+        assert envelope["event_type"] == EVENT_BOT_CREATED
+        assert envelope["schema_version"] == 1
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_subscribe_events_replays_from_cursor_with_stable_ids():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7",
+                               backend="kb-1")
+    try:
+        complete_handshake(server, engine, b)
+        engine.bots.add(1)
+        engine.fire(b.pump_id)
+        engine.bots.add(2)
+        engine.fire(b.pump_id)
+        first = recv_events_batch(server)
+        second = recv_events_batch(server)
+        assert [e["event_id"] for e in first["events"]] == ["kb-1:1"]
+        assert [e["event_id"] for e in second["events"]] == ["kb-1:2"]
+
+        # The Supervisor resumes from its cursor after a reconnect
+        # (docs/bridge.md): replay carries the identical stored envelope,
+        # so Supervisor-side dedup by event_id collapses the overlap.
+        server.send_message(command(
+            op="sub-1", name="subscribe_events", payload={"cursor": 1}))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        replay = recv_events_batch(server)
+        assert [e["event_id"] for e in replay["events"]] == ["kb-1:2"]
+        assert replay["cursor"] == 2
+        assert replay["events"][0] == second["events"][0]
+        assert "gap" not in replay and "oldest_available" not in replay
+
+        # Repeating the same cursor replays the same event_ids again.
+        server.send_message(command(
+            op="sub-2", name="subscribe_events", payload={"cursor": 1}))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        again = recv_events_batch(server)
+        assert [e["event_id"] for e in again["events"]] == ["kb-1:2"]
+        assert again["events"][0] == second["events"][0]
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_subscribe_events_defaults_to_the_window_start():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7",
+                               backend="kb-1")
+    try:
+        complete_handshake(server, engine, b)
+        engine.fire(b.pump_id)  # baseline
+        # Missing cursor -> 0 -> everything buffered is replayed; on an
+        # empty stream this is a plain position ack, not a gap.
+        server.send_message(command(op="sub-1", name="subscribe_events"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        batch = recv_events_batch(server)
+        assert batch["events"] == []
+        assert batch["cursor"] == 0
+        assert "gap" not in batch and "oldest_available" not in batch
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_subscribe_events_rejects_a_bad_cursor():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="sub-bad", name="subscribe_events", payload={"cursor": -1}))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "INVALID_ARGUMENT"
+        assert result["result"]["reason_code"] == "bad_cursor"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_events_carry_the_accepted_plan_shard_attribution():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7",
+                               backend="kb-1")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="apply-1", name="apply_plan", payload=SHARD_PLAN))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        server.send_message(command(op="start-1", name="start"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        # addBots is async on the real engine (creation gate S8); the fake
+        # mirrors that by only recording the call, so bots surface here
+        # explicitly and the next tick's poll diffs them.
+        for i in range(3):
+            engine.bots.add(100 + i)
+        engine.fire(b.pump_id)
+        batch = recv_events_batch(server)
+        events = batch["events"]
+        assert [e["sequence"] for e in events] == [1, 2, 3]
+        assert batch["cursor"] == 3
+        assert all(e["shard_id"] == "shard-3" for e in events), \
+            "attribution comes from the accepted plan"
+        assert all(e["event_id"].startswith("kb-1:") for e in events)
+    finally:
+        b.on_finish()
+        server.close()

@@ -28,6 +28,7 @@ pub mod mapping;
 pub mod observability;
 pub mod provider;
 pub mod scheduler;
+pub mod timestamps;
 pub mod topology;
 
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
@@ -40,6 +41,10 @@ pub use provider::{
 pub use scheduler::{
     scheduler_from_interval, entry_of, failed_queries, CollectedOutcome,
     CollectedQuery, QueryScheduler, ScheduledQuery,
+};
+pub use timestamps::{
+    compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata,
+    MissingInterval, TimestampError, TimestampRecord,
 };
 pub use environment::Environment;
 pub use observability::{

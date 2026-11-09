@@ -37,6 +37,7 @@ pub mod quality;
 pub mod report;
 pub mod scheduler;
 pub mod server;
+pub mod throughput;
 pub mod timestamps;
 pub mod topology;
 
@@ -71,6 +72,10 @@ pub use server::{
 pub use timestamps::{
     compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata,
     MissingInterval, TimestampError, TimestampRecord,
+};
+pub use throughput::{
+    client_rate_series, server_rate_series, ThroughputError, ThroughputKind,
+    ThroughputPoint, ThroughputSeries, ThroughputSource, ThroughputSummary,
 };
 pub use quality::{
     detect_delayed_samples, detect_missing_windows, quality_report,

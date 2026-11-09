@@ -26,6 +26,7 @@ pub mod correlation;
 pub mod environment;
 pub mod mapping;
 pub mod observability;
+pub mod preflight;
 pub mod provider;
 pub mod quality;
 pub mod scheduler;
@@ -50,6 +51,10 @@ pub use timestamps::{
 pub use quality::{
     detect_delayed_samples, detect_missing_windows, quality_report,
     QualityFinding, QualityReport,
+};
+pub use preflight::{
+    decision_for, CheckOutcome, Preflight, PreflightCheck, PreflightDecision,
+    PreflightReport,
 };
 pub use environment::Environment;
 pub use observability::{

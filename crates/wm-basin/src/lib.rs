@@ -27,6 +27,7 @@ pub mod catalog;
 pub mod correlation;
 pub mod environment;
 pub mod generator;
+pub mod labels;
 pub mod mapping;
 pub mod observability;
 pub mod overhead;
@@ -53,6 +54,7 @@ pub use generator::{
     aggregate, GeneratorAggregate, SaturationSignal, SaturationThresholds,
     WorkerSnapshot,
 };
+pub use labels::{DataQualityLabel, QualityEvidence, QualityLabelSet};
 pub use mapping::{MappingEntry, MappingError, MetricMapping};
 pub use provider::{
     HttpTransport, MetricProvider, PrometheusProvider, ProviderError,

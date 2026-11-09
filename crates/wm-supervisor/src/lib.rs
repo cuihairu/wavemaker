@@ -526,4 +526,95 @@ mod tests {
         let record = sup.terminate(Duration::from_millis(500)).await.unwrap();
         assert_eq!(record.code, Some(0));
     }
+
+    // -- fault injection (WM-0218) ------------------------------------------
+
+    /// A hung bots process that ignores SIGTERM must not outlive the grace
+    /// period: terminate escalates to SIGKILL and the record says so.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn terminate_escalates_to_kill_when_child_ignores_sigterm() {
+        let mut spec = ProcessSpec::new("/bin/sh", &["-c", "trap '' TERM; while :; do sleep 1; done"]);
+        let mut sup = NativeProcessLauncher::new();
+        sup.start(&spec).await.unwrap();
+        // Let the child reach its signal-handling state: a SIGTERM racing
+        // the exec would kill the shell before the trap exists, which is
+        // a different fault than the escalation path under test.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let record = sup.terminate(Duration::from_millis(300)).await.unwrap();
+        assert_eq!(record.code, None);
+        assert_eq!(record.signal, Some(9), "expected SIGKILL escalation");
+        assert!(record.is_abnormal());
+    }
+
+    /// A bots process killed from outside (OOM killer, operator) surfaces
+    /// as an abnormal signal record, not a silent disappearance.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn external_signal_death_is_recorded_as_abnormal() {
+        let spec = ProcessSpec::new("/bin/sh", &["-c", "sleep 30"]);
+        let mut sup = NativeProcessLauncher::new();
+        let pid = sup.start(&spec).await.unwrap();
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGKILL);
+        }
+        let mut record = None;
+        for _ in 0..100 {
+            if let ProcessState::Exited(r) = sup.status().await.unwrap() {
+                record = Some(r);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let record = record.expect("process died from the signal");
+        assert_eq!(record.signal, Some(9));
+        assert!(record.is_abnormal());
+    }
+
+    /// Failure evidence keeps both stream tails: stdout must not be a
+    /// blind spot the way it would be with stderr-only capture.
+    #[tokio::test]
+    async fn stdout_tail_is_captured_for_failure_records() {
+        let spec = ProcessSpec::new("/bin/sh", &["-c", "echo wm-stdout-evidence; exit 7"]);
+        let mut sup = NativeProcessLauncher::new();
+        sup.start(&spec).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let record = sup.terminate(Duration::from_millis(2000)).await.unwrap();
+        assert_eq!(record.code, Some(7));
+        let out = String::from_utf8_lossy(&record.stdout_tail);
+        assert!(out.contains("wm-stdout-evidence"), "stdout tail: {out:?}");
+    }
+
+    /// A stop racing the child's own exit is refused — the contract
+    /// pinned with wm-controller's full_chain test ("terminate after exit
+    /// must not pretend success") — while the record itself stays
+    /// reachable through status(), so the orchestrator never loses the
+    /// evidence of how the process ended.
+    #[tokio::test]
+    async fn stop_after_natural_exit_is_refused_but_state_reports_exited() {
+        let spec = ProcessSpec::new("/bin/sh", &["-c", "exit 5"]);
+        let mut sup = NativeProcessLauncher::new();
+        sup.start(&spec).await.unwrap();
+        let mut first = None;
+        for _ in 0..100 {
+            if let ProcessState::Exited(r) = sup.status().await.unwrap() {
+                first = Some(r);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            first.expect("child exited on its own").code,
+            Some(5),
+            "status() keeps the exit record"
+        );
+        assert!(
+            sup.terminate(Duration::from_millis(500)).await.is_err(),
+            "terminate after a collected exit must be refused"
+        );
+        assert!(
+            sup.kill().await.is_err(),
+            "kill after a collected exit must be refused"
+        );
+    }
 }

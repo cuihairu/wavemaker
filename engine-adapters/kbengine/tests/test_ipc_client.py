@@ -443,6 +443,49 @@ def test_connect_failure_returns_false_and_counts():
     client.close()
 
 
+def test_frame_reader_rejects_non_utf8_and_non_object_payloads():
+    from bridge.ipc_client import FrameError, FrameReader
+
+    reader = FrameReader()
+    try:
+        reader.feed(struct.pack(">I", 3) + b"\xff\xfe\xfd")
+    except FrameError:
+        pass
+    else:
+        raise AssertionError("non-UTF-8 payload accepted")
+
+    reader = FrameReader()
+    try:
+        reader.feed(struct.pack(">I", 6) + b"[1, 2]")
+    except FrameError:
+        pass
+    else:
+        raise AssertionError("non-object JSON message accepted")
+
+
+def test_truncated_frame_then_peer_death_ends_session_as_disconnect():
+    # A peer that dies mid-frame (partial header, then EOF) must end the
+    # session as a disconnect — no hang, no exception, and the buffered
+    # partial is discarded with the session instead of leaking forward.
+    server = LoopbackServer.unix()
+    client = make_client(server)
+    try:
+        assert client.connect()
+        conn = server.wait_connected()
+        conn.sendall(b"\x00\x00")  # header cut in half
+        server.close()             # then the peer dies
+        deadline = 200
+        while client.is_connected and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        assert not client.is_connected, "mid-frame peer death must disconnect"
+        assert not client.send_message({"late": True})
+        stats = client.stats()
+        assert stats["protocol_errors"] == 0, "EOF is a disconnect, not garbage"
+    finally:
+        client.close()
+
+
 def test_peer_disconnect_surfaces_as_state_not_exception():
     server = LoopbackServer.unix()
     client = make_client(server)

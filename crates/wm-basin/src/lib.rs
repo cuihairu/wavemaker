@@ -24,12 +24,14 @@ use serde::{Deserialize, Serialize};
 pub mod catalog;
 pub mod correlation;
 pub mod environment;
+pub mod mapping;
 pub mod observability;
 pub mod provider;
 pub mod topology;
 
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
 pub use correlation::{CorrelationContext, TimeRange};
+pub use mapping::{MappingEntry, MappingError, MetricMapping};
 pub use provider::{
     HttpTransport, MetricProvider, PrometheusProvider, ProviderError,
     ProviderSeries, QueryWindow, Sample, TcpHttpTransport,

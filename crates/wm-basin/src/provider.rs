@@ -664,7 +664,7 @@ mod tests {
         let port = listener.local_addr().expect("addr").port();
         let server = std::thread::spawn(move || {
             let payload = br#"{"ok":true}"#.to_vec();
-            let mut serve = |out: &mut Vec<u8>| {
+            let serve = |out: &mut Vec<u8>| {
                 let (mut sock, _) = listener.accept().expect("accept");
                 let mut buf = [0u8; 2048];
                 let _ = sock.read(&mut buf); // request bytes; we only respond

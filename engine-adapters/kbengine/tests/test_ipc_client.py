@@ -1277,6 +1277,12 @@ def test_heartbeat_keeps_the_session_visibly_alive():
         assert beat["generation"] == 42
         assert beat["bridge_state"] == "ready"
         assert isinstance(beat["ipc"], dict) and "sent" in beat["ipc"]
+        # WM-0214: process-level metrics ride the beat (None fields when
+        # /proc is unavailable — never fake zeros).
+        assert set(beat["process"]) == {"cpu_seconds", "rss_bytes",
+                                        "fd_count"}
+        assert beat["process"]["rss_bytes"] is None or \
+            beat["process"]["rss_bytes"] > 0
 
         for _ in range(Bootstrap.HEARTBEAT_TICKS):
             engine.fire(b.pump_id)

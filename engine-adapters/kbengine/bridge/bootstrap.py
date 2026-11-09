@@ -49,6 +49,7 @@ from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 from .lifecycle import BackendLifecycle
 from .plans import PlanState
+from .process_metrics import collect_process_metrics
 
 
 class BootstrapConfig(object):
@@ -327,7 +328,9 @@ class Bootstrap(object):
     def _send_heartbeat(self):
         """One heartbeat (WM-0212): liveness + transport/lifecycle state.
         Non-blocking enqueue; a disconnected session drops it silently (the
-        reconnect thread owns recovery)."""
+        reconnect thread owns recovery). WM-0214: process-level metrics
+        ride the same beat (unreadable source -> None fields, never fake
+        zeros)."""
         self._heartbeat_seq += 1
         self.send_message({
             "kind": "heartbeat",
@@ -335,6 +338,7 @@ class Bootstrap(object):
             "generation": self._handshake_generation,
             "bridge_state": self._state,
             "ipc": self.ipc_stats(),
+            "process": collect_process_metrics(),
             "monotonic": time.monotonic(),
         })
 

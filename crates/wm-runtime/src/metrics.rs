@@ -79,6 +79,11 @@ impl WorkerMetrics {
         self.actors_started.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Record `n` actors started in one go (e.g. a whole arrival wave).
+    pub fn record_actors_started(&self, n: u64) {
+        self.actors_started.fetch_add(n, Ordering::Relaxed);
+    }
+
     pub fn record_actor_closed(&self) {
         self.actors_closed.fetch_add(1, Ordering::Relaxed);
     }

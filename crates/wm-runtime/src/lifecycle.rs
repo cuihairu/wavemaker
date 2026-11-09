@@ -120,15 +120,16 @@ impl LifecycleManager {
     /// Record that the actor's behavior actually executed for the first time
     /// at `now_ns` (the batch runner calls this when it delivers the
     /// `Started` event). This is the measurement point of the
-    /// planned-to-start deviation against `planned_at_ns`. Unknown or
-    /// already-recorded actors are ignored.
-    pub fn record_first_run(&mut self, aid: ActorId, now_ns: u64) {
-        if let Some(planned) = self.planned_at.remove(&aid) {
-            let deviation = now_ns.saturating_sub(planned);
-            self.planned_to_start_sum_ns += deviation as u128;
-            self.planned_to_start_count += 1;
-            self.planned_to_start_max_ns = self.planned_to_start_max_ns.max(deviation);
-        }
+    /// planned-to-start deviation against `planned_at_ns`. Returns the
+    /// recorded deviation so callers can feed their own metrics; `None` for
+    /// unknown or already-recorded actors.
+    pub fn record_first_run(&mut self, aid: ActorId, now_ns: u64) -> Option<u64> {
+        let planned = self.planned_at.remove(&aid)?;
+        let deviation = now_ns.saturating_sub(planned);
+        self.planned_to_start_sum_ns += deviation as u128;
+        self.planned_to_start_count += 1;
+        self.planned_to_start_max_ns = self.planned_to_start_max_ns.max(deviation);
+        Some(deviation)
     }
 
     /// Pop the next runnable actor (FIFO). The caller owns the actor until it

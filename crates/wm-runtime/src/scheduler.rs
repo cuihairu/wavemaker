@@ -176,6 +176,16 @@ impl<T> TimerScheduler<T> {
     where
         F: FnMut(TimerId, T),
     {
+        self.expire_with_deadline(now_ns, |id, _deadline_ns, payload| fire(id, payload))
+    }
+
+    /// Like [`TimerScheduler::expire`], but the callback also receives the
+    /// timer's scheduled `deadline_ns` — what lets a caller measure the
+    /// fire-vs-deadline delay without re-deriving it.
+    pub fn expire_with_deadline<F>(&mut self, now_ns: u64, mut fire: F) -> usize
+    where
+        F: FnMut(TimerId, u64, T),
+    {
         let mut fired = 0;
         while let Some(top) = self.heap.peek() {
             if top.deadline_ns > now_ns {
@@ -187,7 +197,7 @@ impl<T> TimerScheduler<T> {
                 continue;
             }
             fired += 1;
-            fire(TimerId(entry.seq), entry.payload);
+            fire(TimerId(entry.seq), entry.deadline_ns, entry.payload);
         }
         fired
     }

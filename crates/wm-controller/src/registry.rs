@@ -77,6 +77,11 @@ pub struct WorkerRecord {
     /// Seconds since the Unix epoch; `None` between registration and
     /// the first heartbeat.
     pub last_heartbeat_unix_s: Option<u64>,
+    /// Seconds since the Unix epoch — when the CURRENT lease
+    /// invalidation happened (distributed.md §Leases policy 3: record
+    /// the invalidation time). `None` while the lease is valid; set on
+    /// Online→LostContact, cleared again when a beat restores Online.
+    pub lease_invalidated_at_unix_s: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +95,8 @@ pub enum RegistrationDecision {
 pub enum RegistryError {
     #[error("worker id must not be empty")]
     EmptyWorkerId,
+    #[error("lease ttl {ttl_ms}ms is shorter than the heartbeat interval {interval_ms}ms; a worker would be declared lost before its first beat is due")]
+    LeaseTtlTooShort { ttl_ms: u64, interval_ms: u64 },
 }
 
 fn unix_now() -> u64 {
@@ -99,10 +106,12 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Lease window: a Worker is expired once it has missed two consecutive
-/// heartbeat intervals (the Phase 1 multiplier, kept).
-const EXPIRED_AFTER_INTERVALS: u32 = 2;
-
+/// The lease (WM-0506) — explicit TTL over recorded heartbeats.
+/// distributed.md §Leases lists the candidate parameters (1 s beat,
+/// 5 s TTL, lost after 3 misses); which candidate is live is the
+/// CALLER's configuration decision — the registry only demands the
+/// TTL be physically achievable (at least one heartbeat interval).
+/// Expiry arithmetic stays in unix seconds end to end.
 #[derive(Debug)]
 pub struct WorkerRegistry {
     inner: Mutex<RegistryInner>,
@@ -112,22 +121,39 @@ pub struct WorkerRegistry {
 struct RegistryInner {
     workers: HashMap<String, WorkerRecord>,
     heartbeat_interval: Duration,
+    lease_ttl: Duration,
     next_generation: u64,
 }
 
 impl WorkerRegistry {
-    pub fn new(heartbeat_interval_ms: u32) -> Self {
-        Self {
+    /// `lease_ttl_ms` must be at least one heartbeat interval — a
+    /// shorter TTL would declare Workers lost before their first beat
+    /// can even be due. Exact boundary: a Worker whose silence reaches
+    /// the TTL is expired.
+    pub fn new(heartbeat_interval_ms: u32, lease_ttl_ms: u64) -> Result<Self, RegistryError> {
+        let interval = u64::from(heartbeat_interval_ms);
+        if lease_ttl_ms < interval {
+            return Err(RegistryError::LeaseTtlTooShort {
+                ttl_ms: lease_ttl_ms,
+                interval_ms: interval,
+            });
+        }
+        Ok(Self {
             inner: Mutex::new(RegistryInner {
                 workers: HashMap::new(),
-                heartbeat_interval: Duration::from_millis(u64::from(heartbeat_interval_ms)),
+                heartbeat_interval: Duration::from_millis(interval),
+                lease_ttl: Duration::from_millis(lease_ttl_ms),
                 next_generation: 0,
             }),
-        }
+        })
     }
 
     pub fn heartbeat_interval(&self) -> Duration {
         self.inner.lock().unwrap().heartbeat_interval
+    }
+
+    pub fn lease_ttl(&self) -> Duration {
+        self.inner.lock().unwrap().lease_ttl
     }
 
     /// §5.3 / §12.1: validate the handshake, then accept or reject with
@@ -158,15 +184,19 @@ impl WorkerRegistry {
                 generation,
                 registered_at_unix_s: unix_now(),
                 last_heartbeat_unix_s: None,
+                lease_invalidated_at_unix_s: None,
             },
         );
         Ok(RegistrationDecision::Accepted { generation })
     }
 
     /// Record a heartbeat. `true` also restores LostContact → Online
-    /// (a fresh beat is proof of liveness). Old generations never win,
-    /// and Deregistered workers are refused outright — their
-    /// generation is dead until a rejoin mints a new one.
+    /// (a fresh beat is proof of liveness) and clears the recorded
+    /// invalidation time — that invalidation window is over. Old
+    /// generations never win (policy 7: events from an old generation
+    /// never overwrite new state), and Deregistered workers are
+    /// refused outright — their generation is dead until a rejoin
+    /// mints a new one.
     pub fn heartbeat(&self, worker_id: &str, generation: u64) -> bool {
         let mut inner = self.inner.lock().unwrap();
         match inner.workers.get_mut(worker_id) {
@@ -177,6 +207,7 @@ impl WorkerRegistry {
                 record.last_heartbeat_unix_s = Some(unix_now());
                 if record.state == WorkerState::LostContact {
                     record.state = WorkerState::Online;
+                    record.lease_invalidated_at_unix_s = None;
                 }
                 true
             }
@@ -185,16 +216,12 @@ impl WorkerRegistry {
     }
 
     /// Workers whose lease has expired AND are still Online — the
-    /// caller (WM-0506's lease loop) moves them with `mark_lost`.
-    /// Already-LostContact workers are not re-reported, so the caller's
-    /// loop stays idempotent. Expiry arithmetic stays entirely in unix
-    /// seconds — the same clock the stamps use.
+    /// caller moves them with `sweep_expired` (or `mark_lost`).
+    /// Already-LostContact workers are not re-reported, so loops stay
+    /// idempotent. Expiry arithmetic stays entirely in unix seconds —
+    /// the same clock the stamps use.
     pub fn expired_workers(&self) -> Vec<String> {
-        let interval_secs = self
-            .heartbeat_interval()
-            .as_secs()
-            .max(1)
-            * u64::from(EXPIRED_AFTER_INTERVALS);
+        let ttl_secs = self.lease_ttl().as_secs();
         let inner = self.inner.lock().unwrap();
         let now = unix_now();
         inner
@@ -204,20 +231,50 @@ impl WorkerRegistry {
                 record.state == WorkerState::Online
                     && record
                         .last_heartbeat_unix_s
-                        .map(|stamp| stamp.saturating_add(interval_secs) < now)
+                        .map(|stamp| stamp.saturating_add(ttl_secs) <= now)
                         .unwrap_or(false)
             })
             .map(|record| record.registration.worker_id.clone())
             .collect()
     }
 
-    /// Online → LostContact. Unknown workers or wrong states are a
-    /// no-op reported as `false` (the lease loop logs, not panics).
+    /// The lease loop primitive (WM-0506): atomically move every
+    /// expired Online worker to LostContact and record the invalidation
+    /// time (distributed.md §Leases policy 3), returning the ids newly
+    /// lost this sweep. Invalidation is a STATE change only — the
+    /// record is kept, nothing disconnects, no sessions are torn down
+    /// (policy 2; the exit criterion "lease invalidation does not
+    /// create extra disconnection spikes" is structural here). Idempotent.
+    pub fn sweep_expired(&self) -> Vec<String> {
+        let ttl_secs = self.lease_ttl().as_secs();
+        let mut inner = self.inner.lock().unwrap();
+        let now = unix_now();
+        let mut newly_lost = Vec::new();
+        for record in inner.workers.values_mut() {
+            let expired = record.state == WorkerState::Online
+                && record
+                    .last_heartbeat_unix_s
+                    .map(|stamp| stamp.saturating_add(ttl_secs) <= now)
+                    .unwrap_or(false);
+            if expired {
+                record.state = WorkerState::LostContact;
+                record.lease_invalidated_at_unix_s = Some(now);
+                newly_lost.push(record.registration.worker_id.clone());
+            }
+        }
+        newly_lost.sort();
+        newly_lost
+    }
+
+    /// Online → LostContact, recording the invalidation time. Unknown
+    /// workers or wrong states are a no-op reported as `false` (the
+    /// caller logs, not panics).
     pub fn mark_lost(&self, worker_id: &str) -> bool {
         let mut inner = self.inner.lock().unwrap();
         match inner.workers.get_mut(worker_id) {
             Some(record) if record.state == WorkerState::Online => {
                 record.state = WorkerState::LostContact;
+                record.lease_invalidated_at_unix_s = Some(unix_now());
                 true
             }
             _ => false,
@@ -286,7 +343,7 @@ mod tests {
 
     #[test]
     fn incompatible_protocol_version_is_rejected_with_reason() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         let mut handshake = registration("w1");
         handshake.protocol_version = PROTOCOL_VERSION + 7;
         let decision = registry.register(handshake).expect("valid input");
@@ -305,7 +362,7 @@ mod tests {
 
     #[test]
     fn empty_worker_id_is_a_validation_error() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         assert_eq!(
             registry.register(registration("  ")),
             Err(RegistryError::EmptyWorkerId)
@@ -314,7 +371,7 @@ mod tests {
 
     #[test]
     fn registration_records_versions_and_assigns_monotonic_generations() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         let g1 = registry
             .register(registration("w1"))
             .expect("accept");
@@ -339,7 +396,7 @@ mod tests {
 
     #[test]
     fn declared_capacity_is_stored_verbatim_never_interpreted() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         let mut handshake = registration("w1");
         handshake.resource_capacity = Some(crate::capacity::ResourceCapacity {
             bot_slots: Some(500),
@@ -359,7 +416,7 @@ mod tests {
 
     #[test]
     fn rejoin_bumps_generation_and_stale_beats_never_win() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         let g1 = match registry.register(registration("w1")).expect("accept") {
             RegistrationDecision::Accepted { generation } => generation,
             other => panic!("unexpected {other:?}"),
@@ -381,14 +438,14 @@ mod tests {
 
     #[test]
     fn lease_expiry_moves_online_to_lost_contact_and_a_beat_restores_it() {
-        let registry = WorkerRegistry::new(50);
+        let registry = WorkerRegistry::new(50, 50 * 4).expect("lease config");
         let generation = match registry.register(registration("w1")).expect("accept") {
             RegistrationDecision::Accepted { generation } => generation,
             other => panic!("unexpected {other:?}"),
         };
         registry.heartbeat("w1", generation);
-        // Manipulate the recorded beat backwards so the 2-interval
-        // deadline is provably crossed without sleeping.
+        // Manipulate the recorded beat backwards so the TTL deadline
+        // is provably crossed without sleeping.
         {
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut("w1").expect("record");
@@ -398,21 +455,27 @@ mod tests {
         assert_eq!(registry.expired_workers(), vec!["w1".to_string()]);
         assert!(registry.mark_lost("w1"));
         assert_eq!(registry.count_in_state(WorkerState::LostContact), 1);
+        // Policy 3: the invalidation time is recorded while lost.
+        assert!(registry
+            .worker("w1")
+            .expect("record")
+            .lease_invalidated_at_unix_s
+            .is_some());
         // Idempotent loop: no longer reported, and mark_lost on a lost
         // worker is a no-op.
         assert!(registry.expired_workers().is_empty());
         assert!(!registry.mark_lost("w1"));
-        // A fresh beat with the current generation restores Online.
+        // A fresh beat with the current generation restores Online and
+        // closes the invalidation window.
         assert!(registry.heartbeat("w1", generation));
-        assert_eq!(
-            registry.worker("w1").expect("record").state,
-            WorkerState::Online
-        );
+        let record = registry.worker("w1").expect("record");
+        assert_eq!(record.state, WorkerState::Online);
+        assert_eq!(record.lease_invalidated_at_unix_s, None);
     }
 
     #[test]
     fn workers_without_any_heartbeat_are_never_expired_early() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         registry.register(registration("w1")).expect("accept");
         // last_heartbeat_unix_s is None between registration and the
         // first beat; the lease loop must not expire such a worker
@@ -421,8 +484,79 @@ mod tests {
     }
 
     #[test]
+    fn ttl_shorter_than_the_heartbeat_interval_is_refused() {
+        assert!(matches!(
+            WorkerRegistry::new(1000, 999),
+            Err(RegistryError::LeaseTtlTooShort {
+                ttl_ms: 999,
+                interval_ms: 1000
+            })
+        ));
+        // TTL == interval is the tightest legal lease.
+        assert!(WorkerRegistry::new(1000, 1000).is_ok());
+    }
+
+    #[test]
+    fn ttl_boundary_is_exact_silence_reaching_the_ttl_expires() {
+        // Candidate parameters from distributed.md: 1 s beat, 5 s TTL.
+        let registry = WorkerRegistry::new(1000, 5000).expect("valid lease config");
+        let generation = match registry.register(registration("w1")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => generation,
+            other => panic!("unexpected {other:?}"),
+        };
+        registry.heartbeat("w1", generation);
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.workers.get_mut("w1").expect("record");
+            record.last_heartbeat_unix_s =
+                Some(record.last_heartbeat_unix_s.unwrap() - 5);
+        }
+        // Exactly TTL seconds of silence → expired.
+        assert_eq!(registry.expired_workers(), vec!["w1".to_string()]);
+    }
+
+    #[test]
+    fn sweep_records_invalidation_time_without_disconnecting_anyone() {
+        let registry = WorkerRegistry::new(1000, 5000).expect("valid lease config");
+        let mut generations = std::collections::BTreeMap::new();
+        for id in ["w-b", "w-a"] {
+            let generation = match registry.register(registration(id)).expect("accept") {
+                RegistrationDecision::Accepted { generation } => generation,
+                other => panic!("unexpected {other:?}"),
+            };
+            generations.insert(id, generation);
+            registry.heartbeat(id, generation);
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.workers.get_mut(id).expect("record");
+            record.last_heartbeat_unix_s =
+                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+        }
+        let lost = registry.sweep_expired();
+        assert_eq!(lost, vec!["w-a".to_string(), "w-b".to_string()]);
+        // Policy 2: invalidation is a state change, NOT a disconnection
+        // — records stay, sessions would keep running, nothing is
+        // removed from the mesh.
+        for id in ["w-a", "w-b"] {
+            let record = registry.worker(id).expect("record retained");
+            assert_eq!(record.state, WorkerState::LostContact);
+            assert!(
+                record.lease_invalidated_at_unix_s.is_some(),
+                "policy 3: invalidation time recorded"
+            );
+        }
+        assert_eq!(registry.workers().len(), 2, "nobody was dropped");
+        // Idempotent: a second sweep re-reports nothing.
+        assert!(registry.sweep_expired().is_empty());
+        // A fresh beat closes the window.
+        assert!(registry.heartbeat("w-a", generations["w-a"]));
+        let record = registry.worker("w-a").expect("record");
+        assert_eq!(record.state, WorkerState::Online);
+        assert_eq!(record.lease_invalidated_at_unix_s, None);
+    }
+
+    #[test]
     fn deregistration_keeps_the_record_and_refuses_beats() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         let generation = match registry.register(registration("w1")).expect("accept") {
             RegistrationDecision::Accepted { generation } => generation,
             other => panic!("unexpected {other:?}"),
@@ -445,7 +579,7 @@ mod tests {
 
     #[test]
     fn listings_are_stable_and_state_aware() {
-        let registry = WorkerRegistry::new(1000);
+        let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
         registry.register(registration("b")).expect("accept");
         registry.register(registration("a")).expect("accept");
         registry.register(registration("c")).expect("accept");

@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 pub mod alignment;
+pub mod assertion_scheduler;
 pub mod assertions;
 pub mod baseline;
 pub mod catalog;
@@ -51,6 +52,10 @@ pub use assertions::{
     AssertionRecordError, AssertionSpec, AssertionSpecError, AssertionStatus,
     EvidenceKind, EvidenceRef, OnFail, PeriodicInterval, RecordWindow, Trigger,
     TriggerSpec, WindowContext, WindowContextError,
+};
+pub use assertion_scheduler::{
+    AssertionOutcome, AssertionScheduler, AssertionSchedulerError, ProviderSet,
+    RecoveryWindow, ScenarioWindow,
 };
 pub use baseline::{
     degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,

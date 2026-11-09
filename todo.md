@@ -165,14 +165,14 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 
 ## 审核发现
 
-- [ ] 审核发现：被拒绝的 ApplyPlan 请求仍先覆盖 swell 绑定，导致之后的状态记录归属错误（crates/wm-worker/src/backend.rs:233）。
-- [ ] 审核发现：提前 drain 尚未到达的 actor 时，其 Scheduled 时间戳被设为未来的计划时间，导致单调时间断言触发并崩溃（crates/wm-runtime/src/lifecycle.rs:71）。
-- [ ] 审核发现：actor 关闭后未取消订阅且到期定时器仍会投递事件，后续消息和定时器会在无法运行的 actor 队列中持续累积（crates/wm-runtime/src/batch.rs:177）。
-- [ ] 审核发现：发送结果仅包含消息 ID 和载荷而丢失来源 actor，多个会话同时发送时无法将消息路由到各自的传输连接（crates/wm-runtime/src/batch.rs:193）。
-- [ ] 审核发现：planned-to-start 偏差在 actor 进入运行队列时计算而非行为实际执行时计算，批处理积压期间会低估启动延迟（crates/wm-runtime/src/lifecycle.rs:103）。
-- [ ] 审核发现：启动基准把进入队列的 actor 计为已执行，超过批次大小时首个 tick 即结束，未测量剩余 actor 的启动行为（crates/wm-runtime/benches/runtime.rs:123）。
-- [ ] 审核发现：取消未知的未来定时器 ID 会留下墓碑并静默取消后来分配相同 ID 的定时器，已触发 ID 的取消还会永久累积墓碑（crates/wm-runtime/src/scheduler.rs:97）。
-- [ ] 审核发现：超过直方图上限的延迟被静默丢弃而非截断或报告，长尾样本消失会低估延迟和计数（crates/wm-runtime/src/histogram.rs:41）。
-- [ ] 审核发现：TCP 对空缓冲区的读取返回零也被当作对端关闭，调用 recv 空切片即可错误地关闭仍然活跃的连接（crates/wm-runtime/src/tcp.rs:64）。
-- [ ] 审核发现：WorkerMetrics 没有接入调度器、行为执行或传输路径，实际运行时不会自动记录所需的调度和消息指标（crates/wm-runtime/src/metrics.rs:17）。
-- [ ] 审核发现：到达时间反演使用 ln(1+x) 导致极小间隔因浮点舍入归零，允许的高到达率下会产生重复时间戳并在调试构建触发断言（crates/wm-runtime/src/arrival.rs:125）。
+- [x] 审核发现：被拒绝的 ApplyPlan 请求仍先覆盖 swell 绑定，导致之后的状态记录归属错误（crates/wm-worker/src/backend.rs:233）— 属实，修于 7673f08（合法性检查前置到 bind_swell 之前），测试 `rejected_apply_plan_does_not_overwrite_swell_binding` 绿。
+- [x] 审核发现：提前 drain 尚未到达的 actor 时，其 Scheduled 时间戳被设为未来的计划时间，导致单调时间断言触发并崩溃（crates/wm-runtime/src/lifecycle.rs:71）— 属实，修于 e9f208a（spawn 以观测时刻戳记、启动定时器按计划时刻），测试 `draining_a_not_yet_arrived_actor_keeps_history_monotonic` 绿。
+- [x] 审核发现：actor 关闭后未取消订阅且到期定时器仍会投递事件，后续消息和定时器会在无法运行的 actor 队列中持续累积（crates/wm-runtime/src/batch.rs:177）— 属实，修于 bb38f63（Close 分支取消订阅+清空+取消定时器），测试 `closed_actor_drops_subscriptions_and_pending_timers` 绿。
+- [x] 审核发现：发送结果仅包含消息 ID 和载荷而丢失来源 actor，多个会话同时发送时无法将消息路由到各自的传输连接（crates/wm-runtime/src/batch.rs:193）— 属实，修于 12dcd6a（TickOutcome::sends 携带 `(ActorId,u32,Vec<u8>)`），测试 `sends_carry_the_source_actor` 绿。
+- [x] 审核发现：planned-to-start 偏差在 actor 进入运行队列时计算而非行为实际执行时计算，批处理积压期间会低估启动延迟（crates/wm-runtime/src/lifecycle.rs:103）— 属实，修于 d0e2047（`record_first_run` 在执行时测量），测试 `planned_to_start_deviation_measures_actual_execution` 绿。
+- [x] 审核发现：启动基准把进入队列的 actor 计为已执行，超过批次大小时首个 tick 即结束，未测量剩余 actor 的启动行为（crates/wm-runtime/benches/runtime.rs:123）— 属实，修于 84392d5（以 `out.run` 排空并断言每个 actor 恰好执行一次），文档修订于 967373d（docs/benchmarks/runtime-benchmark.md §3 说明语义变更）。
+- [x] 审核发现：取消未知的未来定时器 ID 会留下墓碑并静默取消后来分配相同 ID 的定时器，已触发 ID 的取消还会永久累积墓碑（crates/wm-runtime/src/scheduler.rs:97）— 属实，修于 84392d5（`live_seqs` 镜像仅墓碑活跃 ID），测试 `cancelling_an_unallocated_id_does_not_kill_a_later_timer` 与 `cancelling_fired_and_unknown_ids_keeps_tombstone_set_empty` 绿。
+- [x] 审核发现：超过直方图上限的延迟被静默丢弃而非截断或报告，长尾样本消失会低估延迟和计数（crates/wm-runtime/src/histogram.rs:41）— 属实，修于 f3a560c（钳位到 frozen-v1 1h 上限而非丢弃），测试 `above_ceiling_samples_are_clamped_not_dropped` 绿。
+- [x] 审核发现：TCP 对空缓冲区的读取返回零也被当作对端关闭，调用 recv 空切片即可错误地关闭仍然活跃的连接（crates/wm-runtime/src/tcp.rs:64）— 属实（跨平台潜在缺陷），修于 e03eb8c（空缓冲区读取短路为 no-op 而非 EOF），测试 `recv_with_empty_buffer_does_not_close_a_live_connection` 绿；本 Linux 非阻塞空读返回 EAGAIN 掩盖了该路径，保护消除平台依赖。
+- [x] 审核发现：WorkerMetrics 没有接入调度器、行为执行或传输路径，实际运行时不会自动记录所需的调度和消息指标（crates/wm-runtime/src/metrics.rs:17）— 属实，修于 82d1d33（ActorRunner 内嵌 WorkerMetrics，接通 timer 增删/触发、actor 启动/关闭、消息收发与字节、planned-to-start、runnable 队列 gauge；run_ns 与 event-loop lag 属实时 worker 层，代码内注明），测试 `metrics_track_the_tick_paths` 绿。
+- [x] 审核发现：到达时间反演使用 ln(1+x) 导致极小间隔因浮点舍入归零，允许的高到达率下会产生重复时间戳并在调试构建触发断言（crates/wm-runtime/src/arrival.rs:125）— 属实，修于 3230e25（`ln_1p` + `next_arrival_after` 严格前进钳位），测试 `inverse_cumulative_is_strictly_monotone_for_tiny_increments` 绿。

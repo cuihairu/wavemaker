@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod baseline;
 pub mod catalog;
 pub mod correlation;
 pub mod environment;
@@ -33,6 +34,11 @@ pub mod scheduler;
 pub mod timestamps;
 pub mod topology;
 
+pub use baseline::{
+    degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,
+    BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,
+    OverheadSamples, BASELINE_WINDOW_MS,
+};
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
 pub use correlation::{CorrelationContext, TimeRange};
 pub use mapping::{MappingEntry, MappingError, MetricMapping};

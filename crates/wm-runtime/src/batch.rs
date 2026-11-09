@@ -182,6 +182,11 @@ impl ActorRunner {
             }
             ActorDecision::Close => {
                 let _ = self.lifecycle.close(actor, now_ns, "behavior closed");
+                // A closed actor can never run again: drop its message
+                // subscriptions and cancel its armed timers so nothing keeps
+                // queueing on it afterwards.
+                self.timers.cancel_where(|t| t.actor == actor);
+                self.dispatcher.unsubscribe_all(actor);
                 self.dispatcher.clear(actor);
                 out.closed += 1;
             }
@@ -237,6 +242,16 @@ impl ActorRunner {
 
     pub fn mean_planned_to_start_ns(&self) -> Option<f64> {
         self.lifecycle.mean_planned_to_start_ns()
+    }
+
+    /// Behavior timers currently armed (introspection).
+    pub fn behavior_timers_len(&self) -> usize {
+        self.timers.heap_len()
+    }
+
+    /// Events queued for `actor` (introspection).
+    pub fn pending_events(&self, actor: ActorId) -> usize {
+        self.dispatcher.pending(actor)
     }
 }
 
@@ -428,5 +443,60 @@ mod tests {
             "actor must close after processing both timers"
         );
         assert_eq!(runner.actor_state(actor), Some(ActorState::Closed));
+    }
+
+    /// A closed actor must stop collecting events: its message subscriptions
+    /// are dropped and its still-armed behavior timers are cancelled at
+    /// close, or every later message and timer fire queues up forever on an
+    /// actor that can never run again.
+    #[test]
+    fn closed_actor_drops_subscriptions_and_pending_timers() {
+        struct CloseOnFirstTimer;
+        impl Behavior for CloseOnFirstTimer {
+            fn on_event(
+                &mut self,
+                ctx: &mut BehaviorContext,
+                event: &BehaviorEvent,
+            ) -> ActorDecision {
+                match event {
+                    BehaviorEvent::Started => {
+                        ctx.arm_timer(1, ctx.now_ns() + 1_000);
+                        ctx.arm_timer(2, ctx.now_ns() + 60_000_000_000);
+                        ActorDecision::Wait
+                    }
+                    BehaviorEvent::Timer(1) => ActorDecision::Close,
+                    _ => ActorDecision::Wait,
+                }
+            }
+        }
+
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(13);
+        let actor = runner.spawn(0, 0, Box::new(CloseOnFirstTimer));
+        runner.subscribe(actor, 42);
+
+        runner.tick(0, &mut rng); // start: arms both timers
+        let t1 = runner.tick(1_000, &mut rng); // timer 1 fires -> close
+        assert_eq!(t1.closed, 1);
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Closed));
+        assert_eq!(
+            runner.behavior_timers_len(),
+            0,
+            "armed timers cancelled at close"
+        );
+
+        // Later traffic must not queue on the closed actor.
+        runner.route_message(2_000, 42, b"late");
+        assert_eq!(
+            runner.pending_events(actor),
+            0,
+            "subscription dropped at close"
+        );
+        runner.tick(60_000_000_000 + 1, &mut rng);
+        assert_eq!(
+            runner.pending_events(actor),
+            0,
+            "far timer cancelled at close"
+        );
     }
 }

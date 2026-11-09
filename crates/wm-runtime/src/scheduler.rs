@@ -98,6 +98,30 @@ impl<T> TimerScheduler<T> {
         self.cancelled.insert(id.0)
     }
 
+    /// Cancel every live timer whose payload matches `pred`, removing the
+    /// entries from the heap immediately. Returns how many were removed.
+    /// Used by owners tearing one actor down: its timers vanish instead of
+    /// firing into a queue nobody will drain.
+    pub fn cancel_where<F>(&mut self, mut pred: F) -> usize
+    where
+        F: FnMut(&T) -> bool,
+    {
+        let mut removed: Vec<u64> = Vec::new();
+        self.heap.retain(|e| {
+            if pred(&e.payload) {
+                removed.push(e.seq);
+                false
+            } else {
+                true
+            }
+        });
+        let count = removed.len();
+        for seq in removed {
+            self.cancelled.remove(&seq);
+        }
+        count
+    }
+
     /// Number of entries in the heap, including cancelled ones not yet
     /// popped (an honest upper bound on live timers).
     pub fn heap_len(&self) -> usize {
@@ -205,6 +229,20 @@ mod tests {
         sched.cancel(id);
         sched.expire(100, |_, _| fired += 1);
         assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn cancel_where_removes_matching_live_timers_only() {
+        let mut sched: TimerScheduler<(u64, u8)> = TimerScheduler::new();
+        sched.schedule(100, (1, 0));
+        sched.schedule(150, (2, 7));
+        sched.schedule(200, (3, 0));
+        assert_eq!(sched.cancel_where(|(_, kind)| *kind == 0), 2);
+        let mut fired = Vec::new();
+        sched.expire(1_000, |_, p| fired.push(p));
+        assert_eq!(fired, vec![(2, 7)], "only non-matching timers survive");
+        assert_eq!(sched.heap_len(), 0);
+        assert_eq!(sched.next_deadline(), None);
     }
 
     #[test]

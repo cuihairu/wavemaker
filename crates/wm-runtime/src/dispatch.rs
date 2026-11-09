@@ -39,6 +39,15 @@ impl EventDispatcher {
         }
     }
 
+    /// Remove every subscription of `actor` (used when it is closed), pruning
+    /// subscription lists that become empty.
+    pub fn unsubscribe_all(&mut self, actor: ActorId) {
+        self.subscriptions.retain(|_, subs| {
+            subs.retain(|a| *a != actor);
+            !subs.is_empty()
+        });
+    }
+
     /// Number of actors subscribed to `message_id`.
     pub fn subscriber_count(&self, message_id: u32) -> usize {
         self.subscriptions.get(&message_id).map_or(0, Vec::len)
@@ -169,5 +178,18 @@ mod tests {
         d.clear(aid(1));
         assert_eq!(d.pending(aid(1)), 0);
         assert_eq!(d.next_event(aid(1)), None);
+    }
+
+    #[test]
+    fn unsubscribe_all_removes_every_subscription_and_prunes_empty_lists() {
+        let mut d = EventDispatcher::new();
+        d.subscribe(aid(1), 3);
+        d.subscribe(aid(1), 4);
+        d.subscribe(aid(2), 3);
+        d.unsubscribe_all(aid(1));
+        assert_eq!(d.subscriber_count(4), 0, "solo list pruned");
+        assert_eq!(d.subscriber_count(3), 1, "other subscribers kept");
+        assert_eq!(d.route_message(3, b"x"), vec![aid(2)]);
+        assert_eq!(d.route_message(4, b"x"), Vec::<ActorId>::new());
     }
 }

@@ -29,6 +29,7 @@ pub mod baseline;
 pub mod catalog;
 pub mod correlation;
 pub mod environment;
+pub mod evidence;
 pub mod generator;
 pub mod labels;
 pub mod mapping;
@@ -59,6 +60,10 @@ pub use assertion_scheduler::{
     RecoveryWindow, ScenarioWindow,
 };
 pub use assertion_transport::{AssertionHttpTransport, HttpAssertionProvider, TcpPostTransport};
+pub use evidence::{
+    ArchiveStatus, EvidenceArchive, EvidenceError, RawDataReference,
+    EVIDENCE_BUNDLE_FORMAT,
+};
 pub use baseline::{
     degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,
     BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,

@@ -159,6 +159,12 @@ pub struct WindowContext {
     pub window_start_unix_ms: i64,
     pub window_end_unix_ms: i64,
     pub trigger: Trigger,
+    /// §6.2: the pre-created evidence directory
+    /// (`<swell_dir>/evidence/<assertion-name>/<timestamp>/`) the
+    /// provider writes raw evidence into. Request-side only — it is not
+    /// part of the report result record, so it is skipped when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -482,6 +488,7 @@ timeout_s: 5
             window_start_unix_ms: 100,
             window_end_unix_ms: 200,
             trigger: Trigger::AfterRecovery,
+            evidence_dir: None,
         };
         context.validate().expect("valid");
 
@@ -619,6 +626,7 @@ timeout_s: 5
             window_start_unix_ms: 0,
             window_end_unix_ms: 1000,
             trigger: Trigger::Periodic,
+            evidence_dir: None,
         };
         let mut params = Map::new();
         params.insert(

@@ -97,6 +97,10 @@ pub struct AssertionScheduler {
     /// Specs (by index) that have fired at least once through a mandatory
     /// window (after_scenario / after_recovery).
     mandatory_fired: Vec<bool>,
+    /// §6.2: per-assertion evidence directory pre-created by the
+    /// Controller at registration; injected into every window the
+    /// assertion executes in.
+    evidence_dirs: BTreeMap<String, String>,
     outcomes: Vec<AssertionOutcome>,
 }
 
@@ -118,8 +122,16 @@ impl AssertionScheduler {
             specs,
             next_periodic_due: vec![None; count],
             mandatory_fired: vec![false; count],
+            evidence_dirs: BTreeMap::new(),
             outcomes: Vec::new(),
         })
+    }
+
+    /// §6.2: register the pre-created evidence directory for one
+    /// assertion instance; it rides in every window that assertion
+    /// executes in, so the provider knows where to write raw evidence.
+    pub fn attach_evidence_dir(&mut self, assertion_name: &str, dir: String) {
+        self.evidence_dirs.insert(assertion_name.to_string(), dir);
     }
 
     pub fn specs(&self) -> &[AssertionSpec] {
@@ -158,8 +170,9 @@ impl AssertionScheduler {
                 window_start_unix_ms: context.start_unix_ms,
                 window_end_unix_ms: context.end_unix_ms,
                 trigger: Trigger::AfterScenario,
+                evidence_dir: None,
             };
-            fired.extend(self.execute_spec(index, providers, &window, checked_at_rfc3339));
+            fired.extend(self.execute_spec(index, providers, window, checked_at_rfc3339));
         }
         fired
     }
@@ -192,8 +205,9 @@ impl AssertionScheduler {
                 window_start_unix_ms: context.fault_start_unix_ms,
                 window_end_unix_ms: context.recovered_at_unix_ms,
                 trigger: Trigger::AfterRecovery,
+                evidence_dir: None,
             };
-            fired.extend(self.execute_spec(index, providers, &window, checked_at_rfc3339));
+            fired.extend(self.execute_spec(index, providers, window, checked_at_rfc3339));
         }
         fired
     }
@@ -232,9 +246,10 @@ impl AssertionScheduler {
                 window_start_unix_ms: (due - interval_ms).max(0),
                 window_end_unix_ms: due,
                 trigger: Trigger::Periodic,
+                evidence_dir: None,
             };
             self.next_periodic_due[index] = Some(due + interval_ms);
-            fired.extend(self.execute_spec(index, providers, &window, checked_at_rfc3339));
+            fired.extend(self.execute_spec(index, providers, window, checked_at_rfc3339));
         }
         fired
     }
@@ -281,13 +296,18 @@ impl AssertionScheduler {
         &mut self,
         index: usize,
         providers: &ProviderSet<'_>,
-        window: &WindowContext,
+        mut window: WindowContext,
         checked_at_rfc3339: &str,
     ) -> Vec<AssertionOutcome> {
         let spec = &self.specs[index];
+        if window.evidence_dir.is_none() {
+            if let Some(dir) = self.evidence_dirs.get(&spec.name) {
+                window.evidence_dir = Some(dir.clone());
+            }
+        }
         let outcome = match providers.resolve(&spec.provider) {
             Some(provider) => AssertionOutcome {
-                record: provider.execute(&spec.name, &spec.params, window),
+                record: provider.execute(&spec.name, &spec.params, &window),
                 on_fail: spec.on_fail,
             },
             None => AssertionOutcome {
@@ -579,6 +599,50 @@ mod tests {
         assert!(scheduler
             .finalize_unfired("2026-11-10T01:00:01Z", "again")
             .is_empty());
+    }
+
+    #[test]
+    fn attached_evidence_dir_rides_in_the_window_context() {
+        let recording = Recording::new();
+        let providers = providers_with(&recording);
+        let mut scheduler = AssertionScheduler::register(vec![scenario_spec(
+            "no-duplicate-roles",
+            "create-role",
+        )])
+        .expect("register");
+        // §6.2: the Controller pre-creates the directory at registration
+        // and attaches it; every window the assertion executes in
+        // carries it.
+        scheduler.attach_evidence_dir(
+            "no-duplicate-roles",
+            "evidence/no-duplicate-roles/20261110T000000Z".into(),
+        );
+        scheduler.on_scenario_finished(
+            &providers,
+            &ScenarioWindow::sample(),
+            "2026-11-10T00:01:00Z",
+        );
+        {
+            let seen = recording.seen_windows.borrow();
+            assert_eq!(
+                seen[0].evidence_dir.as_deref(),
+                Some("evidence/no-duplicate-roles/20261110T000000Z")
+            );
+        }
+        // An assertion without an attached dir carries None — no path is
+        // invented on its behalf.
+        let mut bare = AssertionScheduler::register(vec![scenario_spec(
+            "other-audit",
+            "create-role",
+        )])
+        .expect("register");
+        bare.on_scenario_finished(
+            &providers,
+            &ScenarioWindow::sample(),
+            "2026-11-10T00:01:00Z",
+        );
+        let seen = recording.seen_windows.borrow();
+        assert_eq!(seen[1].evidence_dir, None);
     }
 
     #[test]

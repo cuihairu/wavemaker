@@ -255,6 +255,7 @@ mod tests {
             window_start_unix_ms: 1_000,
             window_end_unix_ms: 9_000,
             trigger: Trigger::AfterScenario,
+            evidence_dir: None,
         }
     }
 

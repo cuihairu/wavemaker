@@ -21,11 +21,13 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod catalog;
 pub mod correlation;
 pub mod environment;
 pub mod observability;
 pub mod topology;
 
+pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
 pub use correlation::{CorrelationContext, TimeRange};
 pub use environment::Environment;
 pub use observability::{

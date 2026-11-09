@@ -15,4 +15,6 @@ wm-core.workspace = true
 libc = "0.2"
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true
+wm-runtime.workspace = true

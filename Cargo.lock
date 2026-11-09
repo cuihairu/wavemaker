@@ -2161,11 +2161,13 @@ name = "wm-supervisor"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "wm-core",
+ "wm-runtime",
 ]
 
 [[package]]

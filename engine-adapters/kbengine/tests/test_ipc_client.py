@@ -964,3 +964,38 @@ def test_start_executes_the_mapped_batches_through_addbots():
     finally:
         b.on_finish()
         server.close()
+
+
+def test_stop_admission_over_the_wire_freezes_and_blocks_start():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="apply-1", name="apply_plan", payload=VALID_PLAN))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        server.send_message(command(op="start-1", name="start"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        assert engine.add_bots_calls == [10]  # bucket 0 fired
+
+        # StopAdmission: idempotent, existing bots untouched (the engine
+        # keeps its live clients; add_bots_calls never grows again).
+        server.send_message(command(op="stop-1", name="stop_admission"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        server.send_message(command(op="stop-2", name="stop_admission"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+
+        server.send_message(command(op="start-2", name="start"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "admission_stopped"
+        engine.fire(b.pump_id)
+        assert engine.add_bots_calls == [10], "schedule frozen, no new bots"
+    finally:
+        b.on_finish()
+        server.close()

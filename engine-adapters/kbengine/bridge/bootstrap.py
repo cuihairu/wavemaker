@@ -122,6 +122,7 @@ class Bootstrap(object):
         self._plans = PlanState(config.swell_id, SCHEDULING_RESOLUTION_MS)
         self._dispatcher.set_handler("apply_plan", self._on_apply_plan)
         self._dispatcher.set_handler("start", self._on_start)
+        self._dispatcher.set_handler("stop_admission", self._on_stop_admission)
         self._connections = ConnectionCollector()
 
     @property
@@ -302,6 +303,10 @@ class Bootstrap(object):
         # Start idempotency keys on operation_id (docs/bridge.md §Command
         # Semantics); the payload carries no Start-relevant fields.
         return self._plans.start(operation_id)
+
+    def _on_stop_admission(self, payload, operation_id):
+        # WM-0210: stop new bots, keep existing connections; idempotent.
+        return self._plans.stop_admission(operation_id)
 
     def execute_due_batches(self):
         """Fire one addBots per due batch on the scripting thread (the pump

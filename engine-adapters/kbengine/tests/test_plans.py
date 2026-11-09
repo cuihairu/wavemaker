@@ -165,3 +165,35 @@ def test_coalesced_same_bucket_batches_fire_as_one_addbots():
     ]))
     ps.start("op-1")
     assert ps.due_batches() == [7], "same bucket sums into one addBots call"
+
+
+def test_stop_admission_is_idempotent_without_a_key():
+    ps = PlanState("sw-1", 100)
+    assert ps.stop_admission("stop-1") == OK
+    assert ps.admission_stopped
+    assert ps.stop_admission("stop-2") == OK, "idempotent, any operation_id"
+
+
+def test_stop_admission_freezes_the_running_schedule():
+    clock = FakeClock()
+    ps = PlanState("sw-1", 100, clock=clock)
+    ps.apply(plan(batches=[
+        {"offset_ms": 0, "bot_count": 10},
+        {"offset_ms": 300, "bot_count": 20},
+    ]))
+    ps.start("op-1")
+    assert ps.due_batches() == [10]  # bucket 0 fired
+    assert ps.stop_admission("stop-1") == OK
+    clock.advance(1.0)
+    assert ps.due_batches() == [], "remaining batches frozen, never resumed"
+    code, reason, detail = ps.start("op-2")
+    assert (code, reason) == ("FAILED_PRECONDITION", "admission_stopped")
+
+
+def test_start_after_stop_admission_refused_even_when_idle():
+    ps = PlanState("sw-1", 100)
+    assert ps.stop_admission("stop-1") == OK
+    ps.apply(plan())  # a plan may still be recorded, but…
+    code, reason, detail = ps.start("op-1")
+    assert (code, reason) == ("FAILED_PRECONDITION", "admission_stopped")
+    assert detail

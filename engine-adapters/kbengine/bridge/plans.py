@@ -57,6 +57,7 @@ REASON_BAD_BATCH = "bad_batch"
 REASON_CONFLICTING_PLAN = "conflicting_plan"
 REASON_PLAN_NOT_ACCEPTED = "plan_not_accepted"
 REASON_ALREADY_RUNNING = "already_running"
+REASON_ADMISSION_STOPPED = "admission_stopped"
 
 
 def _is_int(value):
@@ -137,6 +138,7 @@ class PlanState(object):
         self._start_operation_id = ""
         self._started_at = 0.0
         self._fired_through = -1
+        self._admission_stopped = False
 
     @property
     def state(self):
@@ -185,6 +187,13 @@ class PlanState(object):
 
     def start(self, operation_id):
         """Handle a `start` command. Returns a result tuple."""
+        if self._admission_stopped:
+            # StopAdmission is one-way (docs/bridge.md has no reopen): no
+            # new bot-creating execution may begin after it.
+            return _fail(
+                "FAILED_PRECONDITION", REASON_ADMISSION_STOPPED,
+                "admission stopped; no new execution",
+            )
         if self._state == "idle":
             return _fail(
                 "FAILED_PRECONDITION", REASON_PLAN_NOT_ACCEPTED,
@@ -204,12 +213,34 @@ class PlanState(object):
         self._fired_through = -1
         return OK
 
+    def stop_admission(self, operation_id):
+        """Handle a `stop_admission` command: no new bots from this bridge.
+
+        Stops the bridge's own schedule (remaining batches freeze) and any
+        future start. Existing bots are untouched — that is the command's
+        semantics (docs/bridge.md: stop admissions, keep connections), and
+        the engine's own create-and-login maintenance is outside bridge
+        control (audit §8.1 S8 note: the handler recreates kicked bots to
+        maintain its target; no statically-known API cancels that — the
+        gap is a runtime-verification item for WM-0216).
+
+        Idempotent without a key (docs/bridge.md §Command Semantics):
+        every further stop returns OK.
+        """
+        self._admission_stopped = True
+        return OK
+
+    @property
+    def admission_stopped(self):
+        return self._admission_stopped
+
     def due_batches(self):
         """Bot counts of every batch whose time bucket has arrived since
-        the last call (ascending bucket order). Empty when idle/accepted or
-        when the schedule is exhausted. One list element = one addBots call
-        (D2 batch budget: never more than one per pump tick... per batch)."""
-        if self._state != "running":
+        the last call (ascending bucket order). Empty when idle/accepted,
+        after StopAdmission (frozen, never resumed), or when the schedule
+        is exhausted. One list element = one addBots call (D2 batch
+        budget: never more than one per pump tick... per batch)."""
+        if self._state != "running" or self._admission_stopped:
             return []
         elapsed_ms = (self._clock() - self._started_at) * 1000.0
         current = int(elapsed_ms // self._resolution_ms)

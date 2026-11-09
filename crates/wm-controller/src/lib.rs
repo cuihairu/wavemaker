@@ -6,6 +6,7 @@ pub mod capacity;
 pub mod config;
 pub mod control;
 pub mod http;
+pub mod recovery;
 pub mod registry;
 pub mod server;
 pub mod shard_plan;
@@ -16,6 +17,7 @@ pub use backend_registry::{
     BackendTransition,
 };
 pub use capacity::ResourceCapacity;
+pub use recovery::{PlanAuthority, RecoveryDivergence, RecoverySync, RecoveryView};
 pub use shard_plan::{
     MovedEntry, PlanBackend, PlanEntry, PlanError, PlannedArrival, ReplanRecord,
     ShardPlan, ShardRule,

@@ -27,6 +27,7 @@ pub mod environment;
 pub mod mapping;
 pub mod observability;
 pub mod provider;
+pub mod scheduler;
 pub mod topology;
 
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
@@ -35,6 +36,10 @@ pub use mapping::{MappingEntry, MappingError, MetricMapping};
 pub use provider::{
     HttpTransport, MetricProvider, PrometheusProvider, ProviderError,
     ProviderSeries, QueryWindow, Sample, TcpHttpTransport,
+};
+pub use scheduler::{
+    scheduler_from_interval, entry_of, failed_queries, CollectedOutcome,
+    CollectedQuery, QueryScheduler, ScheduledQuery,
 };
 pub use environment::Environment;
 pub use observability::{

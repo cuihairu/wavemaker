@@ -5,6 +5,7 @@ members = [
     "crates/wm-protocol",
     "crates/wm-controller",
     "crates/wm-worker",
+    "crates/wm-runtime",
     "crates/wm-supervisor",
     "crates/wm-observability",
     "crates/wm-cli",
@@ -38,6 +39,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 wm-core = { path = "crates/wm-core" }
 wm-protocol = { path = "crates/wm-protocol" }
 wm-controller = { path = "crates/wm-controller" }
+wm-runtime = { path = "crates/wm-runtime" }
 wm-worker = { path = "crates/wm-worker" }
 wm-supervisor = { path = "crates/wm-supervisor" }
 wm-observability = { path = "crates/wm-observability" }

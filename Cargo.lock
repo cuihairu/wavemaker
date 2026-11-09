@@ -2148,6 +2148,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wm-runtime"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "wm-core",
+]
+
+[[package]]
 name = "wm-supervisor"
 version = "0.1.0"
 dependencies = [

@@ -18,6 +18,7 @@ pub mod codec;
 pub mod dispatch;
 pub mod framing;
 pub mod lifecycle;
+pub mod metrics;
 pub mod rng;
 pub mod scheduler;
 pub mod session;

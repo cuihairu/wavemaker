@@ -41,6 +41,8 @@ pub enum HdrError {
     OutOfRange { value: i64, highest: i64 },
     #[error("count overflow at counts index {index}")]
     CountOverflow { index: usize },
+    #[error("histogram parameters mismatch: expected {expected}, got {got}")]
+    ParameterMismatch { expected: String, got: String },
     #[error("bad blob cookie 0x{got:08x}, expected 0x{expected:08x}")]
     BadCookie { got: u32, expected: u32 },
     #[error("blob truncated: {0}")]
@@ -280,6 +282,56 @@ impl Histogram {
         if index != 0 && self.min_non_zero_index.is_none_or(|m| index < m) {
             self.min_non_zero_index = Some(index);
         }
+        Ok(())
+    }
+
+    /// Counts-level merge (`add` in HdrHistogram terms): fold `other`
+    /// into `self` slot by slot. This is the ONLY honest way to
+    /// aggregate distributions — percentiles of the merged histogram
+    /// come from merged raw counts, never from averaging per-source
+    /// percentiles. Parameters must be IDENTICAL (v1 freezes one
+    /// parameter set globally, so workers can always merge); anything
+    /// else is refused by name, not approximated.
+    pub fn merge_from(&mut self, other: &Histogram) -> Result<(), HdrError> {
+        if self.params != other.params {
+            return Err(HdrError::ParameterMismatch {
+                expected: format!(
+                    "lowest={}, sig_figs={}, highest={}",
+                    self.params.lowest_discernible_value,
+                    self.params.significant_figures,
+                    self.params.highest_trackable_value,
+                ),
+                got: format!(
+                    "lowest={}, sig_figs={}, highest={}",
+                    other.params.lowest_discernible_value,
+                    other.params.significant_figures,
+                    other.params.highest_trackable_value,
+                ),
+            });
+        }
+        // Check the total overflow BEFORE touching any slot so a
+        // failed merge leaves self untouched.
+        let total = self
+            .total_count
+            .checked_add(other.total_count)
+            .ok_or(HdrError::CountOverflow { index: 0 })?;
+        for (index, &count) in other.counts.iter().enumerate() {
+            if count == 0 {
+                continue;
+            }
+            let slot = self.counts[index]
+                .checked_add(count)
+                .ok_or(HdrError::CountOverflow { index })?;
+            self.counts[index] = slot;
+            let value = self.geometry.value_from_index(index);
+            if value > self.max_value {
+                self.max_value = value;
+            }
+            if index != 0 && self.min_non_zero_index.is_none_or(|m| index < m) {
+                self.min_non_zero_index = Some(index);
+            }
+        }
+        self.total_count = total;
         Ok(())
     }
 
@@ -600,6 +652,57 @@ mod tests {
         assert!(HdrParameters::new(0, 2, 100).is_err());
         assert!(HdrParameters::new(1, 6, 100).is_err());
         assert!(HdrParameters::new(100, 2, 1).is_err());
+    }
+
+    #[test]
+    fn merge_is_counts_level_addition_with_identical_parameters_required() {
+        // Worker A records low latencies, worker B records high ones.
+        let mut a = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        for value in [1_000_000, 1_000_000, 2_000_000] {
+            a.record_value(value).unwrap();
+        }
+        let mut b = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        for value in [9_000_000_000, 9_000_000_000, 3_600_000_000_000] {
+            b.record_value(value).unwrap();
+        }
+        a.merge_from(&b).expect("identical params merge");
+        assert_eq!(a.total_count(), 6);
+        assert_eq!(a.max_value(), b.max_value(), "max travels with the merge");
+        // Percentiles of the merged histogram come from merged counts:
+        // the low half and high half each hold 3 of 6 samples, so the
+        // median sits at the boundary between the two clusters — NOT
+        // an average of the two per-worker medians.
+        let median = a.value_at_percentile(50.0);
+        assert!(
+            (2_000_000..9_000_000_000).contains(&median),
+            "median {median} must land in the merged count structure"
+        );
+        assert_eq!(a.value_at_percentile(100.0), b.value_at_percentile(100.0));
+
+        // Different parameters are refused by name, never approximated.
+        let mut other_params = Histogram::new(HdrParameters::new(1, 3, 1000).unwrap()).unwrap();
+        other_params.record_value(10).unwrap();
+        let mut target = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        assert!(matches!(
+            target.merge_from(&other_params),
+            Err(HdrError::ParameterMismatch { .. })
+        ));
+        assert_eq!(target.total_count(), 0, "refused merge leaves no trace");
+    }
+
+    #[test]
+    fn merging_an_empty_histogram_is_the_honest_identity() {
+        let mut a = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        a.record_value(5_000_000).unwrap();
+        let empty = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        let before_max = a.max_value();
+        a.merge_from(&empty).expect("identity merge");
+        assert_eq!(a.total_count(), 1);
+        assert_eq!(a.max_value(), before_max);
+        let mut empty_target = Histogram::new(HdrParameters::frozen_v1()).unwrap();
+        empty_target.merge_from(&a).expect("empty absorbs");
+        assert_eq!(empty_target.total_count(), 1);
+        assert_eq!(empty_target.value_at_percentile(100.0), a.value_at_percentile(100.0));
     }
 
     #[test]

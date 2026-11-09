@@ -83,6 +83,37 @@ pub struct BackendAggregate {
     pub histograms_per_worker: Vec<(String, Histogram)>,
 }
 
+impl BackendAggregate {
+    /// The counts-level HDR merge across this Backend's Workers
+    /// (WM-0511) — the ONLY legitimate source of aggregate
+    /// percentiles. Percentiles computed on the returned histogram
+    /// come from MERGED RAW COUNTS; averaging per-Worker percentiles
+    /// is banned (report-template §11.2) and no such API exists.
+    /// Histogram parameters must match (v1 freezes one parameter set,
+    /// so cross-Worker merges always can succeed).
+    pub fn merged_histogram(&self) -> Result<Histogram, AggregationError> {
+        let mut merged: Option<Histogram> = None;
+        for (_, histogram) in &self.histograms_per_worker {
+            match &mut merged {
+                Some(target) => {
+                    let mut incoming = histogram.clone();
+                    incoming
+                        .merge_from(target)
+                        .map_err(|error| match error {
+                            wm_core::hdr::HdrError::ParameterMismatch { .. } => {
+                                AggregationError::NothingToMerge
+                            }
+                            other => AggregationError::Hdr(other.to_string()),
+                        })?;
+                    merged = Some(incoming);
+                }
+                None => merged = Some(histogram.clone()),
+            }
+        }
+        merged.ok_or(AggregationError::NothingToMerge)
+    }
+}
+
 /// The full aggregation result.
 #[derive(Debug, Clone)]
 pub struct MetricsAggregation {
@@ -124,6 +155,10 @@ pub enum AggregationError {
     EmptyWorkerId,
     #[error("worker {0} reported an inverted window (end before start)")]
     InvertedWindow(String),
+    #[error("nothing to merge: the aggregate carries no histograms")]
+    NothingToMerge,
+    #[error("histogram merge failed: {0}")]
+    Hdr(String),
 }
 
 /// Fold received per-Worker metric sets into per-Backend aggregates.
@@ -366,6 +401,40 @@ mod tests {
             .per_backend
             .iter()
             .all(|aggregate| aggregate.backend_id != "w-free"));
+    }
+
+    #[test]
+    fn aggregate_percentiles_come_only_from_merged_counts_never_averaged() {
+        // One worker saw only fast requests, the other only slow ones.
+        let mut fast = metrics("w-fast", Some("backend-1"), 1);
+        fast.latency_histogram = histogram(&[1_000_000, 1_000_000, 2_000_000]);
+        let mut slow = metrics("w-slow", Some("backend-1"), 1);
+        slow.latency_histogram = histogram(&[9_000_000_000, 9_000_000_000, 3_600_000_000_000]);
+        let aggregation = aggregate_metrics(&["w-fast", "w-slow"], vec![fast, slow])
+            .expect("valid input");
+        let backend1 = &aggregation.per_backend[0];
+
+        // The honest aggregate: merge counts, THEN read percentiles.
+        let merged = backend1.merged_histogram().expect("merge");
+        assert_eq!(merged.total_count(), 6, "raw counts merged");
+        let merged_p50 = merged.value_at_percentile(50.0);
+        let merged_p99 = merged.value_at_percentile(99.0);
+        assert!(merged_p99 >= merged_p50);
+
+        // What §11.2 forbids: averaging the per-worker percentiles.
+        // Demonstrated here to pin the difference — the averaged
+        // number is a different (wrong) value from the merged one.
+        let per_worker_p50s: Vec<f64> = backend1
+            .histograms_per_worker
+            .iter()
+            .map(|(_, histogram)| histogram.value_at_percentile(50.0) as f64)
+            .collect();
+        let forbidden_average = per_worker_p50s.iter().sum::<f64>() / per_worker_p50s.len() as f64;
+        assert!(
+            (forbidden_average - merged_p50 as f64).abs() > 1.0,
+            "averaged p50 ({forbidden_average}) must differ from merged p50 ({merged_p50}) \
+             — otherwise the ban would be indistinguishable from a no-op"
+        );
     }
 
     #[test]

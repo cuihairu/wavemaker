@@ -69,6 +69,14 @@ impl QualityLabelSet {
         self.labels.contains(&label)
     }
 
+    /// Record one label directly — for callers whose evidence is not
+    /// derivable from [`QualityEvidence`] (e.g. the assertion channel's
+    /// own §5.3 coupling). `Complete` stays a conclusion: insert it only
+    /// when nothing else applies.
+    pub fn insert(&mut self, label: DataQualityLabel) {
+        self.labels.insert(label);
+    }
+
     /// Derive the report labels from recorded evidence. `Complete` is
     /// added ONLY when nothing else applied — it is a conclusion, not a
     /// default.

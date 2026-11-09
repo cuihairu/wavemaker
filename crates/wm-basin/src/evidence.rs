@@ -46,10 +46,11 @@ fn checked_component(component: &str) -> Result<&str, EvidenceError> {
     Ok(component)
 }
 
-/// One §14 `raw_data_references` entry.
+/// One §14 `raw_data_references` entry (schema-shaped: `path` +
+/// `format`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RawDataReference {
-    pub reference: String,
+    pub path: String,
     pub format: String,
 }
 
@@ -135,25 +136,26 @@ impl EvidenceArchive {
             },
         }
     }
+}
 
-    /// §6.1: `kind: artifact` evidence references from the assertion
-    /// records become §14 `raw_data_references` entries (format
-    /// `evidence-bundle`), in record order — the report never reorders
-    /// or reinterprets them.
-    pub fn raw_data_references(&self, records: &[AssertionRecord]) -> Vec<RawDataReference> {
-        let mut references = Vec::new();
-        for record in records {
-            for evidence in &record.evidence {
-                if evidence.kind == EvidenceKind::Artifact {
-                    references.push(RawDataReference {
-                        reference: evidence.reference.clone(),
-                        format: EVIDENCE_BUNDLE_FORMAT.into(),
-                    });
-                }
+/// §6.1: `kind: artifact` evidence references from the assertion
+/// records become §14 `raw_data_references` entries (format
+/// `evidence-bundle`), in record order — the report never reorders or
+/// reinterprets them. Pure mapping; it needs no archive access, so it
+/// lives as a free function.
+pub fn raw_data_references(records: &[AssertionRecord]) -> Vec<RawDataReference> {
+    let mut references = Vec::new();
+    for record in records {
+        for evidence in &record.evidence {
+            if evidence.kind == EvidenceKind::Artifact {
+                references.push(RawDataReference {
+                    path: evidence.reference.clone(),
+                    format: EVIDENCE_BUNDLE_FORMAT.into(),
+                });
             }
         }
-        references
     }
+    references
 }
 
 /// The relative path injected into window contexts, deterministic across
@@ -267,19 +269,18 @@ mod tests {
                 }],
             ),
         ];
-        let archive = EvidenceArchive::new("/swell-001");
-        let references = archive.raw_data_references(&records);
+        let references = raw_data_references(&records);
         assert_eq!(
             references,
             vec![
                 RawDataReference {
-                    reference:
+                    path:
                         "evidence/no-duplicate-roles/20261110T000000Z/roles-diff.json"
                             .into(),
                     format: "evidence-bundle".into(),
                 },
                 RawDataReference {
-                    reference:
+                    path:
                         "evidence/reward-consistency/20261110T000100Z/settlement.json"
                             .into(),
                     format: "evidence-bundle".into(),

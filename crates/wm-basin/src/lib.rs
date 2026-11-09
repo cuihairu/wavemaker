@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 pub mod alignment;
+pub mod assertion_report;
 pub mod assertion_scheduler;
 pub mod assertions;
 pub mod assertion_transport;
@@ -60,6 +61,11 @@ pub use assertion_scheduler::{
     RecoveryWindow, ScenarioWindow,
 };
 pub use assertion_transport::{AssertionHttpTransport, HttpAssertionProvider, TcpPostTransport};
+pub use assertion_report::{
+    assemble_assertions_section, enforce_r5, raw_data_artifacts,
+    AssertionsSection, DataSource, RawDataArtifact, TestValidity,
+    ValidityVerdict,
+};
 pub use evidence::{
     ArchiveStatus, EvidenceArchive, EvidenceError, RawDataReference,
     EVIDENCE_BUNDLE_FORMAT,

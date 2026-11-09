@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod alignment;
 pub mod baseline;
 pub mod catalog;
 pub mod correlation;
@@ -37,6 +38,10 @@ pub mod server;
 pub mod timestamps;
 pub mod topology;
 
+pub use alignment::{
+    common_window, shape_alignment_offset, AlignedStamp, ClockTrust,
+    SourceClock, TimelineAlignment, TimelineSpan,
+};
 pub use baseline::{
     degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,
     BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,

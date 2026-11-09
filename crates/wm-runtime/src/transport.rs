@@ -26,6 +26,13 @@ pub enum TransportError {
     Io(String),
 }
 
+impl TransportError {
+    /// Build an `Io` error from a raw `std::io::Error`.
+    pub(crate) fn from_io(e: std::io::Error) -> Self {
+        TransportError::Io(e.to_string())
+    }
+}
+
 /// Poll-based byte-stream connection.
 pub trait Transport {
     /// Write up to `buf.len()` bytes; returns the number accepted.

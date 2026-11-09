@@ -11,8 +11,11 @@
 
 pub mod actor;
 pub mod arrival;
+pub mod batch;
+pub mod behavior;
 pub mod clock;
 pub mod codec;
+pub mod dispatch;
 pub mod framing;
 pub mod lifecycle;
 pub mod rng;

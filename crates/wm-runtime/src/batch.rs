@@ -1,0 +1,362 @@
+//! Batch actor scheduling (WM-0315).
+//!
+//! The [`ActorRunner`] is the event loop: it owns the lifecycle manager, the
+//! event dispatcher, and the per-actor behaviors, and drives them with a
+//! bounded batch per [`tick`](ActorRunner::tick). Each tick:
+//!
+//! 1. starts actors whose arrival time was reached,
+//! 2. fires behavior timers (delivering `Timer` events and resuming waiters),
+//! 3. runs up to `batch_size` runnable actors, routing their effects.
+//!
+//! The runner owns behavior timers (so a resume is always attributable to a
+//! specific timer or message) and never exposes sockets or worker internals to
+//! a behavior.
+
+use std::collections::{HashMap, HashSet};
+
+use crate::actor::ActorState;
+use crate::behavior::{ActorDecision, Behavior, BehaviorContext, BehaviorEffect, BehaviorEvent};
+use crate::dispatch::EventDispatcher;
+use crate::lifecycle::{ActorId, LifecycleManager};
+use crate::rng::SeededRng;
+use crate::scheduler::TimerScheduler;
+
+/// Everything one [`ActorRunner::tick`] produced.
+#[derive(Debug, Default)]
+pub struct TickOutcome {
+    /// Outbound messages the tick's behaviors requested: `(id, payload)`.
+    pub sends: Vec<(u32, Vec<u8>)>,
+    /// Structured log lines the tick's behaviors emitted.
+    pub logs: Vec<String>,
+    /// Actors that started this tick (arrival reached).
+    pub started: usize,
+    /// Actors resumed from a timer or message this tick.
+    pub resumed: usize,
+    /// Behavior events actually executed this tick.
+    pub run: usize,
+    /// Actors closed by their behavior this tick.
+    pub closed: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BehaviorTimer {
+    actor: ActorId,
+    timer_id: u64,
+}
+
+/// Drives actors in bounded batches per tick.
+pub struct ActorRunner {
+    lifecycle: LifecycleManager,
+    dispatcher: EventDispatcher,
+    behaviors: HashMap<ActorId, Box<dyn Behavior>>,
+    started: HashSet<ActorId>,
+    timers: TimerScheduler<BehaviorTimer>,
+    batch_size: usize,
+}
+
+impl ActorRunner {
+    pub fn new(batch_size: usize) -> Self {
+        assert!(batch_size > 0, "batch size must be positive");
+        Self {
+            lifecycle: LifecycleManager::new(),
+            dispatcher: EventDispatcher::new(),
+            behaviors: HashMap::new(),
+            started: HashSet::new(),
+            timers: TimerScheduler::new(),
+            batch_size,
+        }
+    }
+
+    /// Spawn an actor with its behavior, planned to start at `planned_at_ns`.
+    pub fn spawn(&mut self, planned_at_ns: u64, behavior: Box<dyn Behavior>) -> ActorId {
+        let id = self.lifecycle.spawn(planned_at_ns);
+        self.behaviors.insert(id, behavior);
+        id
+    }
+
+    /// Subscribe an actor to a message id.
+    pub fn subscribe(&mut self, actor: ActorId, message_id: u32) {
+        self.dispatcher.subscribe(actor, message_id);
+    }
+
+    /// Route one incoming message, waking any suspended subscriber.
+    pub fn route_message(&mut self, now_ns: u64, message_id: u32, payload: &[u8]) -> usize {
+        let actors = self.dispatcher.route_message(message_id, payload);
+        let mut woken = 0;
+        for actor in &actors {
+            if self.lifecycle.actor_state(*actor) == Some(ActorState::Waiting)
+                && self
+                    .lifecycle
+                    .resume(*actor, now_ns, "message arrived")
+                    .is_ok()
+            {
+                woken += 1;
+            }
+        }
+        woken
+    }
+
+    /// Advance to `now_ns`, running up to `batch_size` actors.
+    pub fn tick(&mut self, now_ns: u64, rng: &mut SeededRng) -> TickOutcome {
+        let mut out = TickOutcome {
+            started: self.lifecycle.fire_due(now_ns),
+            ..TickOutcome::default()
+        };
+        self.fire_behavior_timers(now_ns, &mut out);
+
+        let mut budget = self.batch_size;
+        while budget > 0 {
+            let Some(actor) = self.lifecycle.dequeue_runnable() else {
+                break;
+            };
+            budget -= 1;
+            self.run_one(actor, now_ns, rng, &mut out);
+        }
+        out
+    }
+
+    fn fire_behavior_timers(&mut self, now_ns: u64, out: &mut TickOutcome) {
+        let mut due = Vec::new();
+        self.timers.expire(now_ns, |_id, timer| due.push(timer));
+        for timer in due {
+            self.dispatcher.deliver_timer(timer.actor, timer.timer_id);
+            if self.lifecycle.actor_state(timer.actor) == Some(ActorState::Waiting)
+                && self
+                    .lifecycle
+                    .resume(timer.actor, now_ns, "timer fired")
+                    .is_ok()
+            {
+                out.resumed += 1;
+            }
+        }
+    }
+
+    fn run_one(&mut self, actor: ActorId, now_ns: u64, rng: &mut SeededRng, out: &mut TickOutcome) {
+        let Some(event) = self.next_event_for(actor) else {
+            // Runnable but with nothing to do: suspend rather than spin.
+            let _ = self.lifecycle.suspend(actor, now_ns, "no event pending");
+            return;
+        };
+
+        let (decision, effects) = {
+            let Some(behavior) = self.behaviors.get_mut(&actor) else {
+                // No behavior: nothing to run; close the actor defensively.
+                let _ = self.lifecycle.close(actor, now_ns, "missing behavior");
+                out.closed += 1;
+                return;
+            };
+            let mut ctx = BehaviorContext::new(now_ns, rng);
+            let decision = behavior.on_event(&mut ctx, &event);
+            (decision, ctx.take_effects())
+        };
+        out.run += 1;
+
+        for effect in effects {
+            self.route_effect(actor, effect, &mut out.sends, &mut out.logs);
+        }
+
+        match decision {
+            ActorDecision::Continue => {
+                if self.dispatcher.pending(actor) > 0 {
+                    self.lifecycle.requeue(actor);
+                } else {
+                    let _ = self.lifecycle.suspend(actor, now_ns, "waiting for event");
+                }
+            }
+            ActorDecision::Wait => {
+                let _ = self.lifecycle.suspend(actor, now_ns, "waiting");
+            }
+            ActorDecision::Close => {
+                let _ = self.lifecycle.close(actor, now_ns, "behavior closed");
+                self.dispatcher.clear(actor);
+                out.closed += 1;
+            }
+        }
+    }
+
+    fn route_effect(
+        &mut self,
+        actor: ActorId,
+        effect: BehaviorEffect,
+        sends: &mut Vec<(u32, Vec<u8>)>,
+        logs: &mut Vec<String>,
+    ) {
+        match effect {
+            BehaviorEffect::Send(id, payload) => sends.push((id, payload)),
+            BehaviorEffect::ArmTimer { id, at_ns } => {
+                self.timers.schedule(
+                    at_ns,
+                    BehaviorTimer {
+                        actor,
+                        timer_id: id,
+                    },
+                );
+            }
+            BehaviorEffect::Log(msg) => logs.push(msg),
+        }
+    }
+
+    fn next_event_for(&mut self, actor: ActorId) -> Option<BehaviorEvent> {
+        if self.started.insert(actor) {
+            Some(BehaviorEvent::Started)
+        } else {
+            self.dispatcher.next_event(actor)
+        }
+    }
+
+    // Read-only introspection for tests and reporting.
+    pub fn actor_state(&self, actor: ActorId) -> Option<ActorState> {
+        self.lifecycle.actor_state(actor)
+    }
+
+    pub fn runnable_len(&self) -> usize {
+        self.lifecycle.runnable_len()
+    }
+
+    pub fn total_created(&self) -> u64 {
+        self.lifecycle.total_created()
+    }
+
+    pub fn total_closed(&self) -> u64 {
+        self.lifecycle.total_closed()
+    }
+
+    pub fn mean_planned_to_start_ns(&self) -> Option<f64> {
+        self.lifecycle.mean_planned_to_start_ns()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Behavior that logs the events it sees and echoes every message.
+    struct EchoBehavior;
+
+    impl Behavior for EchoBehavior {
+        fn on_event(&mut self, ctx: &mut BehaviorContext, event: &BehaviorEvent) -> ActorDecision {
+            match event {
+                BehaviorEvent::Started => {
+                    ctx.log("started");
+                    ActorDecision::Continue
+                }
+                BehaviorEvent::Message(id, payload) => {
+                    ctx.send(*id, payload);
+                    ActorDecision::Continue
+                }
+                BehaviorEvent::Timer(_) => ActorDecision::Close,
+            }
+        }
+    }
+
+    /// Behavior that arms a fixed timer on start, then closes on its fire.
+    struct TimedBehavior;
+
+    impl Behavior for TimedBehavior {
+        fn on_event(&mut self, ctx: &mut BehaviorContext, event: &BehaviorEvent) -> ActorDecision {
+            match event {
+                BehaviorEvent::Started => {
+                    ctx.arm_timer(1, ctx.now_ns() + 1000);
+                    ctx.log("armed");
+                    ActorDecision::Wait
+                }
+                BehaviorEvent::Timer(id) => {
+                    assert_eq!(*id, 1);
+                    ctx.log("timer-fired");
+                    ActorDecision::Close
+                }
+                BehaviorEvent::Message(_, _) => ActorDecision::Wait,
+            }
+        }
+    }
+
+    #[test]
+    fn started_event_then_echo_round_trip() {
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(1);
+        let actor = runner.spawn(0, Box::new(EchoBehavior));
+        runner.subscribe(actor, 5);
+
+        let t0 = runner.tick(0, &mut rng);
+        assert_eq!(t0.started, 1);
+        assert_eq!(t0.run, 1);
+        assert!(t0.logs.contains(&"started".to_string()));
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Waiting));
+
+        // A message resumes the actor and it echoes.
+        let woken = runner.route_message(10, 5, b"ping");
+        assert_eq!(woken, 1);
+        let t1 = runner.tick(10, &mut rng);
+        assert_eq!(t1.run, 1);
+        assert_eq!(t1.sends, vec![(5, b"ping".to_vec())]);
+    }
+
+    #[test]
+    fn timer_wakes_waiting_actor_and_delivers_timer_event() {
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(2);
+        let actor = runner.spawn(0, Box::new(TimedBehavior));
+        let t0 = runner.tick(0, &mut rng);
+        assert_eq!(t0.started, 1);
+        assert_eq!(t0.logs, vec!["armed".to_string()]);
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Waiting));
+
+        let t1 = runner.tick(1000, &mut rng);
+        assert_eq!(t1.resumed, 1);
+        assert_eq!(t1.run, 1);
+        assert_eq!(t1.closed, 1);
+        assert!(t1.logs.contains(&"timer-fired".to_string()));
+        assert_eq!(runner.actor_state(actor), Some(ActorState::Closed));
+    }
+
+    #[test]
+    fn batch_size_bounds_actors_run_per_tick() {
+        let mut runner = ActorRunner::new(2);
+        let mut rng = SeededRng::new(3);
+        let _a = runner.spawn(0, Box::new(EchoBehavior));
+        let _b = runner.spawn(0, Box::new(EchoBehavior));
+        let _c = runner.spawn(0, Box::new(EchoBehavior));
+        let t0 = runner.tick(0, &mut rng);
+        assert_eq!(t0.started, 3);
+        assert_eq!(t0.run, 2, "batch size 2 caps the run");
+        // One actor remains runnable; the next tick drains it.
+        let t1 = runner.tick(0, &mut rng);
+        assert_eq!(t1.run, 1);
+        let t2 = runner.tick(0, &mut rng);
+        assert_eq!(t2.run, 0);
+    }
+
+    #[test]
+    fn close_decision_closes_actor_and_clears_events() {
+        let mut runner = ActorRunner::new(64);
+        let mut rng = SeededRng::new(4);
+        let _actor = runner.spawn(0, Box::new(TimedBehavior));
+        runner.tick(0, &mut rng);
+        // Timer at 1000 closes it; also deliver a stray message first.
+        runner.route_message(10, 9, b"x");
+        let t1 = runner.tick(1000, &mut rng);
+        assert_eq!(t1.closed, 1);
+        assert_eq!(runner.total_closed(), 1);
+    }
+
+    #[test]
+    fn deterministic_replay_same_seed_same_outcome() {
+        let run = || {
+            let mut runner = ActorRunner::new(16);
+            let mut rng = SeededRng::new(7);
+            let mut actors = Vec::new();
+            for _i in 0..8u64 {
+                let a = runner.spawn(0, Box::new(TimedBehavior));
+                runner.subscribe(a, 100);
+                actors.push(a);
+            }
+            let mut outcomes = Vec::new();
+            for now in [0u64, 500, 1000, 1500] {
+                let o = runner.tick(now, &mut rng);
+                outcomes.push((o.started, o.resumed, o.run, o.closed, o.sends.len()));
+            }
+            outcomes
+        };
+        assert_eq!(run(), run());
+    }
+}

@@ -30,7 +30,6 @@ pub enum LifecycleError {
 #[derive(Debug)]
 enum TimerPayload {
     Start(ActorId),
-    Resume(ActorId),
 }
 
 /// Owns and orchestrates all live actors.
@@ -78,53 +77,48 @@ impl LifecycleManager {
         id
     }
 
-    /// Fire every due start/resume timer, moving affected actors onto the
-    /// runnable queue. Returns the number made runnable. Timers whose actor is
-    /// no longer in the matching state (closed, failed) are skipped.
+    /// Fire every due start timer, moving affected actors onto the runnable
+    /// queue. Returns the number made runnable. Timers whose actor is no
+    /// longer `Scheduled` (closed, failed) are skipped.
     pub fn fire_due(&mut self, now_ns: u64) -> usize {
         let mut made_runnable = Vec::new();
         self.timers.expire(now_ns, |_id, payload| match payload {
-            TimerPayload::Start(aid) | TimerPayload::Resume(aid) => made_runnable.push(aid),
+            TimerPayload::Start(aid) => made_runnable.push(aid),
         });
         let mut count = 0;
         for aid in made_runnable {
-            if self.mark_runnable(aid, now_ns) {
+            if self.start(aid, now_ns) {
                 count += 1;
             }
         }
         count
     }
 
-    fn mark_runnable(&mut self, aid: ActorId, now_ns: u64) -> bool {
-        let made_runnable = match self.actors.get_mut(&aid) {
-            Some(machine) => match machine.state() {
-                ActorState::Scheduled => {
-                    let ok = machine
-                        .transition(ActorState::Running, now_ns, "started")
-                        .is_ok();
-                    if ok {
-                        if let Some(planned) = self.planned_at.get(&aid) {
-                            let deviation = now_ns.saturating_sub(*planned);
-                            self.planned_to_start_sum_ns += deviation as u128;
-                            self.planned_to_start_count += 1;
-                            self.planned_to_start_max_ns =
-                                self.planned_to_start_max_ns.max(deviation);
-                        }
+    /// Transition `Scheduled -> Running`, push onto the runnable queue, and
+    /// record the planned-to-start deviation. Returns whether it started.
+    fn start(&mut self, aid: ActorId, now_ns: u64) -> bool {
+        let started = match self.actors.get_mut(&aid) {
+            Some(machine) if machine.state() == ActorState::Scheduled => {
+                let ok = machine
+                    .transition(ActorState::Running, now_ns, "started")
+                    .is_ok();
+                if ok {
+                    if let Some(planned) = self.planned_at.get(&aid) {
+                        let deviation = now_ns.saturating_sub(*planned);
+                        self.planned_to_start_sum_ns += deviation as u128;
+                        self.planned_to_start_count += 1;
+                        self.planned_to_start_max_ns = self.planned_to_start_max_ns.max(deviation);
                     }
-                    ok
                 }
-                ActorState::Waiting => machine
-                    .transition(ActorState::Running, now_ns, "resumed")
-                    .is_ok(),
-                _ => false,
-            },
-            None => false,
+                ok
+            }
+            _ => false,
         };
-        if made_runnable {
+        if started {
             self.runnable.push_back(aid);
             self.peak_runnable = self.peak_runnable.max(self.runnable.len());
         }
-        made_runnable
+        started
     }
 
     /// Pop the next runnable actor (FIFO). The caller owns the actor until it
@@ -135,12 +129,15 @@ impl LifecycleManager {
         Some(aid)
     }
 
-    /// Suspend a runnable actor to `Waiting` until `resume_at_ns`.
+    /// Suspend a runnable actor to `Waiting`.
+    ///
+    /// The suspend does not arm a timer: resumption is driven by the caller
+    /// (the batch runner owns behavior timers and calls [`Self::resume`] when
+    /// one fires or a message arrives).
     pub fn suspend(
         &mut self,
         aid: ActorId,
         now_ns: u64,
-        resume_at_ns: u64,
         reason: &str,
     ) -> Result<(), LifecycleError> {
         let machine = self
@@ -148,9 +145,37 @@ impl LifecycleManager {
             .get_mut(&aid)
             .ok_or(LifecycleError::UnknownActor(aid))?;
         machine.transition(ActorState::Waiting, now_ns, reason)?;
-        self.timers
-            .schedule(resume_at_ns, TimerPayload::Resume(aid));
         Ok(())
+    }
+
+    /// Resume a waiting actor to `Running`, pushing it onto the runnable queue.
+    pub fn resume(
+        &mut self,
+        aid: ActorId,
+        now_ns: u64,
+        reason: &str,
+    ) -> Result<(), LifecycleError> {
+        let machine = self
+            .actors
+            .get_mut(&aid)
+            .ok_or(LifecycleError::UnknownActor(aid))?;
+        machine.transition(ActorState::Running, now_ns, reason)?;
+        self.runnable.push_back(aid);
+        self.peak_runnable = self.peak_runnable.max(self.runnable.len());
+        Ok(())
+    }
+
+    /// Re-queue a still-`Running` actor without a state change (used when a
+    /// behavior chooses `Continue` with more events queued). Returns whether
+    /// the actor was re-queued.
+    pub fn requeue(&mut self, aid: ActorId) -> bool {
+        if self.actors.get(&aid).map(|m| m.state()) == Some(ActorState::Running) {
+            self.runnable.push_back(aid);
+            self.peak_runnable = self.peak_runnable.max(self.runnable.len());
+            true
+        } else {
+            false
+        }
     }
 
     /// Close an actor from any non-terminal state.
@@ -248,8 +273,8 @@ impl LifecycleManager {
         (self.planned_to_start_count > 0).then_some(self.planned_to_start_max_ns)
     }
 
-    /// Number of start/resume timers still pending (an upper bound on live
-    /// timers, including any whose actor has since closed).
+    /// Number of start timers still pending (an upper bound on actors not yet
+    /// started, including any whose actor has since closed).
     pub fn pending_timers(&self) -> usize {
         self.timers.heap_len()
     }
@@ -296,31 +321,33 @@ mod tests {
     }
 
     #[test]
-    fn suspend_waits_then_resumes_via_timer() {
+    fn suspend_then_explicit_resume_requeues() {
         let mut lm = LifecycleManager::new();
         let _ = lm.spawn(100);
         lm.fire_due(100);
         let id = lm.dequeue_runnable().unwrap();
-        lm.suspend(id, 120, 500, "think timer armed").unwrap();
+        lm.suspend(id, 120, "think timer armed").unwrap();
         assert_eq!(lm.actor_state(id), Some(ActorState::Waiting));
-        assert_eq!(lm.fire_due(499), 0);
-        assert_eq!(lm.actor_state(id), Some(ActorState::Waiting));
-        assert_eq!(lm.fire_due(500), 1);
+        assert_eq!(lm.runnable_len(), 0);
+        lm.resume(id, 500, "timer fired").unwrap();
         assert_eq!(lm.actor_state(id), Some(ActorState::Running));
+        assert_eq!(lm.runnable_len(), 1);
         assert_eq!(lm.dequeue_runnable(), Some(id));
     }
 
     #[test]
-    fn close_skips_pending_resume_timer() {
+    fn resume_after_close_is_rejected() {
         let mut lm = LifecycleManager::new();
         let _ = lm.spawn(100);
         lm.fire_due(100);
         let id = lm.dequeue_runnable().unwrap();
-        lm.suspend(id, 120, 500, "block").unwrap();
+        lm.suspend(id, 120, "block").unwrap();
         lm.close(id, 130, "finished").unwrap();
         assert_eq!(lm.actor_state(id), Some(ActorState::Closed));
-        assert_eq!(lm.fire_due(500), 0, "resume timer skipped");
-        assert_eq!(lm.runnable_len(), 0);
+        assert!(matches!(
+            lm.resume(id, 500, "late"),
+            Err(LifecycleError::Illegal(_))
+        ));
     }
 
     #[test]
@@ -341,7 +368,7 @@ mod tests {
         lm.fire_due(10);
         lm.dequeue_runnable();
         let _b = lm.spawn(50);
-        lm.suspend(_a, 20, 500, "block").unwrap();
+        lm.suspend(_a, 20, "block").unwrap();
         assert_eq!(lm.drain(1000), 2);
         assert_eq!(lm.actor_state(_a), Some(ActorState::Closed));
         assert_eq!(lm.total_closed(), 2);
@@ -381,7 +408,7 @@ mod tests {
     fn unknown_actor_is_reported() {
         let mut lm = LifecycleManager::new();
         assert!(matches!(
-            lm.suspend(ActorId(999), 0, 1, "x"),
+            lm.suspend(ActorId(999), 0, "x"),
             Err(LifecycleError::UnknownActor(_))
         ));
         assert!(matches!(

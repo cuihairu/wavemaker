@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use tonic::transport::Channel;
 
 pub mod backend;
+pub mod fault;
 use wm_protocol::common::v1::ErrorCode;
 use wm_protocol::control::v1::control_service_client::ControlServiceClient;
 use wm_protocol::control::v1::{HeartbeatRequest, RegisterWorkerRequest, WorkerLoad};

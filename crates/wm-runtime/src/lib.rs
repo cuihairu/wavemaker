@@ -10,6 +10,8 @@
 //! metrics land with their WM tasks.
 
 pub mod actor;
+pub mod arrival;
 pub mod clock;
+pub mod lifecycle;
 pub mod rng;
 pub mod scheduler;

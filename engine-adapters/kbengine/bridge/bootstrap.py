@@ -44,6 +44,7 @@ from .command_queue import CommandQueue
 from .commands import CommandDispatcher, parse_command
 from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
+from .lifecycle import BackendLifecycle
 from .plans import PlanState
 
 
@@ -123,7 +124,12 @@ class Bootstrap(object):
         self._dispatcher.set_handler("apply_plan", self._on_apply_plan)
         self._dispatcher.set_handler("start", self._on_start)
         self._dispatcher.set_handler("stop_admission", self._on_stop_admission)
+        self._dispatcher.set_handler("drain", self._on_drain)
+        self._dispatcher.set_handler("shutdown", self._on_shutdown)
         self._connections = ConnectionCollector()
+        self._lifecycle = BackendLifecycle()
+        self._shutdown_requested = False
+        self._shutdown_deferred = False
 
     @property
     def state(self):
@@ -215,13 +221,7 @@ class Bootstrap(object):
         is closed inline (bounded join, never a detached wait) and the pump
         is simply cancelled.
         """
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-        if self._pump_id is not None:
-            self._engine.cancel(self._pump_id)
-            self._pump_id = None
-        self._state = "stopped"
+        self._teardown_session()
         return self._state
 
     def send_message(self, message):
@@ -249,7 +249,25 @@ class Bootstrap(object):
             self.PUMP_INTERVAL_S, functools.partial(self._on_pump)
         )
 
+    def _teardown_session(self):
+        """Inline session teardown (synchronous, bounded): close the IPC
+        client and cancel the pump. Used by both the shutdown path (WM-0211)
+        and on_finish."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+        if self._pump_id is not None:
+            self._engine.cancel(self._pump_id)
+            self._pump_id = None
+        self._state = "stopped"
+
     def _on_pump(self):
+        if self._shutdown_deferred:
+            # The tick after the shutdown ack was enqueued: tear the session
+            # down inline now (the ack had one tick of sender flush time).
+            self._shutdown_deferred = False
+            self._teardown_session()
+            return
         try:
             self.drain_command_queue()
             # Batch plan execution rides the same pump tick: due batches
@@ -265,10 +283,14 @@ class Bootstrap(object):
             # succeeded, so log and keep the loop alive.
             traceback.print_exc()
         finally:
-            # `ready` still has a live protocol session; `refused` has none
-            # (the client is torn down and no traffic can flow), so the pump
-            # ends there — the engine itself keeps running untouched.
-            if self._state in ("running", "ready"):
+            if self._shutdown_requested:
+                self._shutdown_requested = False
+                self._shutdown_deferred = True
+            # `ready`/`draining` still have a live protocol session;
+            # `refused` has none (the client is torn down and no traffic can
+            # flow), so the pump ends there — the engine itself keeps
+            # running untouched.
+            if self._state in ("running", "ready", "draining"):
                 self._arm_pump()
 
     def drain_command_queue(self):
@@ -307,6 +329,35 @@ class Bootstrap(object):
     def _on_stop_admission(self, payload, operation_id):
         # WM-0210: stop new bots, keep existing connections; idempotent.
         return self._plans.stop_admission(operation_id)
+
+    def _on_drain(self, payload, operation_id):
+        # WM-0211: mark draining (one-way), freeze the batch schedule (no
+        # new bots while draining), keep the session live for events. The
+        # bridge cannot close bot connections itself (audit §2: pybots is
+        # read-only) — the cleanup judgement runs on the Supervisor against
+        # the collected counts/events.
+        result = self._lifecycle.drain(operation_id)
+        if result[0] == "OK":
+            self._plans.stop_admission(operation_id)
+            if self._state in ("running", "ready"):
+                self._state = "draining"
+        return result
+
+    def _on_shutdown(self, payload, operation_id):
+        # WM-0211: end the protocol session. The OK result goes out on this
+        # tick; the inline teardown runs on the NEXT pump tick so the ack
+        # gets a healthy-sender flush window (§8.3 #5: teardown stays
+        # synchronous, no async waits). The bots process keeps running —
+        # termination is the Supervisor's process-supervision job.
+        result = self._lifecycle.shutdown(operation_id)
+        if result[0] == "OK":
+            self._shutdown_requested = True
+        return result
+
+    @property
+    def lifecycle(self):
+        """Backend lifecycle state (active/draining/stopped)."""
+        return self._lifecycle
 
     def execute_due_batches(self):
         """Fire one addBots per due batch on the scripting thread (the pump

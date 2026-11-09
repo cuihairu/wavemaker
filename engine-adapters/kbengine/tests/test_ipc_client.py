@@ -999,3 +999,79 @@ def test_stop_admission_over_the_wire_freezes_and_blocks_start():
     finally:
         b.on_finish()
         server.close()
+
+
+def test_drain_over_the_wire_freezes_and_keeps_the_session_live():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address, swell="sw-7")
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(
+            op="apply-1", name="apply_plan", payload=VALID_PLAN))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+
+        server.send_message(command(op="drain-1", name="drain"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        assert b.lifecycle.state == "draining"
+        assert b.state == "draining", "session stays live for events"
+        assert len(engine.scheduled) == 1, "pump re-arms while draining"
+        assert b.plans.admission_stopped, "drain implies the admission gate"
+
+        # Idempotent replay of the same operation_id; a different one is
+        # refused.
+        server.send_message(command(op="drain-1", name="drain"))
+        wait_command(b, engine)
+        assert server.recv_frame()["result"]["code"] == "OK"
+        server.send_message(command(op="drain-2", name="drain"))
+        wait_command(b, engine)
+        result = server.recv_frame()
+        assert result["result"]["code"] == "FAILED_PRECONDITION"
+        assert result["result"]["reason_code"] == "already_draining"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_shutdown_ack_flows_before_inline_teardown():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        complete_handshake(server, engine, b)
+        server.send_message(command(op="down-1", name="shutdown"))
+        wait_command(b, engine)
+        # The ack is delivered while the session is still up; teardown is
+        # deferred to the NEXT pump tick (§8.3 #5: synchronous teardown
+        # with one tick of flush time, no async waits).
+        assert server.recv_frame()["result"]["code"] == "OK"
+        assert b.state == "ready", "not torn down inside the ack tick"
+        assert len(engine.scheduled) == 1, "one more tick was armed"
+
+        engine.fire(b.pump_id)
+        assert b.state == "stopped"
+        assert b.lifecycle.state == "stopped"
+        assert b.client is None, "IPC session closed inline"
+        assert not engine.scheduled, "pump cancelled, nothing re-armed"
+        assert engine.cancelled, "live pump handle was cancelled once"
+    finally:
+        b.on_finish()  # idempotent on an already-stopped session
+        server.close()
+
+
+def test_shutdown_idempotent_and_repeatable():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        complete_handshake(server, engine, b)
+        for op in ("down-1", "down-2"):
+            server.send_message(command(op=op, name="shutdown"))
+        wait_command(b, engine)
+        # Both acks enqueue; only the teardown matters downstream.
+        assert server.recv_frame()["result"]["code"] == "OK"
+        assert server.recv_frame()["result"]["code"] == "OK"
+        engine.fire(b.pump_id)  # deferred teardown tick
+        assert b.state == "stopped"
+    finally:
+        b.on_finish()
+        server.close()

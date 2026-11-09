@@ -138,6 +138,18 @@ pub enum BackendRegistryError {
     UnknownBackend(String),
     #[error("reason_code must not be empty: a state change without a reason is unauditable")]
     EmptyReasonCode,
+    #[error("stale report for {backend}: reported generation {reported} is behind current {current}; old-generation events never overwrite new state")]
+    StaleGeneration {
+        backend: String,
+        reported: u64,
+        current: u64,
+    },
+    #[error("future report for {backend}: reported generation {reported} is ahead of current {current}; a gap needs a resync, not a blind accept")]
+    FutureGeneration {
+        backend: String,
+        reported: u64,
+        current: u64,
+    },
     #[error("illegal transition for {backend}: {from:?} -> {to:?} (legal: {legal:?})")]
     IllegalTransition {
         backend: String,
@@ -202,12 +214,19 @@ impl BackendRegistry {
         Ok(record)
     }
 
-    /// Record a REPORTED transition. Legality is the D3 machine; the
-    /// generation bumps on every accepted change. The controller never
-    /// moves a backend's state as a side effect of sending a command.
+    /// Record a REPORTED transition, stamped with the generation the
+    /// REPORTER observed (WM-0508). Legality is the D3 machine; the
+    /// registry's epoch bumps on every accepted change. Generation
+    /// guard (distributed.md policy 7): a report from an OLD epoch is
+    /// refused — dropped or archived by the caller, never applied; a
+    /// report claiming a FUTURE epoch is refused too (a gap is a resync
+    /// problem, not a blind accept). Only reports observing the current
+    /// epoch are applied. The controller never moves a backend's state
+    /// as a side effect of sending a command.
     pub fn report_transition(
         &self,
         backend_id: &str,
+        observed_generation: u64,
         to: BackendState,
         swell_id: Option<String>,
         reason_code: &str,
@@ -220,6 +239,21 @@ impl BackendRegistry {
         let record = inner
             .get_mut(backend_id)
             .ok_or_else(|| BackendRegistryError::UnknownBackend(backend_id.into()))?;
+        let current = record.generation;
+        if observed_generation < current {
+            return Err(BackendRegistryError::StaleGeneration {
+                backend: backend_id.into(),
+                reported: observed_generation,
+                current,
+            });
+        }
+        if observed_generation > current {
+            return Err(BackendRegistryError::FutureGeneration {
+                backend: backend_id.into(),
+                reported: observed_generation,
+                current,
+            });
+        }
         let from = record.state;
         if !record.state.legal_successors().contains(&to) {
             return Err(BackendRegistryError::IllegalTransition {
@@ -311,10 +345,27 @@ mod tests {
             (BackendState::Stopped, "drained", ""),
         ];
         for (state, reason, detail) in steps {
-            registry
-                .report_transition(id, state, Some("sw-1".into()), reason, detail)
-                .expect("legal step");
+            report(registry, id, state, reason, detail).expect("legal step");
         }
+    }
+
+    /// Report observing the CURRENT epoch — the well-behaved reporter.
+    fn report(
+        registry: &BackendRegistry,
+        id: &str,
+        to: BackendState,
+        reason: &str,
+        detail: &str,
+    ) -> Result<BackendTransition, BackendRegistryError> {
+        let generation = registry.backend(id).expect("record").generation;
+        registry.report_transition(
+            id,
+            generation,
+            to,
+            Some("sw-1".into()),
+            reason,
+            detail,
+        )
     }
 
     #[test]
@@ -386,13 +437,7 @@ mod tests {
         registry
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
-        let outcome = registry.report_transition(
-            "kb-conf",
-            BackendState::Running,
-            None,
-            "jump-ahead",
-            "",
-        );
+        let outcome = report(&registry, "kb-conf", BackendState::Running, "jump-ahead", "");
         assert!(matches!(
             outcome,
             Err(BackendRegistryError::IllegalTransition {
@@ -413,6 +458,7 @@ mod tests {
         assert!(matches!(
             registry.report_transition(
                 "ghost",
+                1,
                 BackendState::Handshaking,
                 None,
                 "x",
@@ -424,7 +470,7 @@ mod tests {
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
         assert_eq!(
-            registry.report_transition("kb-conf", BackendState::Handshaking, None, "  ", ""),
+            registry.report_transition("kb-conf", 1, BackendState::Handshaking, None, "  ", ""),
             Err(BackendRegistryError::EmptyReasonCode)
         );
     }
@@ -435,39 +481,22 @@ mod tests {
         registry
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
-        registry
-            .report_transition(
-                "kb-conf",
-                BackendState::Handshaking,
-                None,
-                "handshake-start",
-                "",
-            )
+        report(&registry, "kb-conf", BackendState::Handshaking, "handshake-start", "")
             .expect("step");
-        registry
-            .report_transition(
-                "kb-conf",
-                BackendState::Degraded,
-                None,
-                "slow-handshake",
-                "bridge echo latency 4s",
-            )
-            .expect("degrade from handshaking");
+        report(
+            &registry,
+            "kb-conf",
+            BackendState::Degraded,
+            "slow-handshake",
+            "bridge echo latency 4s",
+        )
+        .expect("degrade from handshaking");
         // Degraded stacks another reason without changing state shape.
-        registry
-            .report_transition(
-                "kb-conf",
-                BackendState::Degraded,
-                None,
-                "events-lagging",
-                "",
-            )
+        report(&registry, "kb-conf", BackendState::Degraded, "events-lagging", "")
             .expect("degrade again");
-        registry
-            .report_transition("kb-conf", BackendState::Failed, None, "handshake-timeout", "")
+        report(&registry, "kb-conf", BackendState::Failed, "handshake-timeout", "")
             .expect("worsen");
-        registry
-            .report_transition("kb-conf", BackendState::Recovering, None, "retry", "")
+        report(&registry, "kb-conf", BackendState::Recovering, "retry", "")
             .expect("recover");
         let record = registry.backend("kb-conf").expect("record");
         assert_eq!(record.state, BackendState::Recovering);
@@ -484,13 +513,7 @@ mod tests {
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
         happy_path(&registry, "kb-conf");
-        let outcome = registry.report_transition(
-            "kb-conf",
-            BackendState::Running,
-            None,
-            "zombie",
-            "",
-        );
+        let outcome = report(&registry, "kb-conf", BackendState::Running, "zombie", "");
         assert!(matches!(
             outcome,
             Err(BackendRegistryError::IllegalTransition { from: BackendState::Stopped, .. })
@@ -537,6 +560,87 @@ mod tests {
     }
 
     #[test]
+    fn stale_reports_never_overwrite_new_state_and_future_reports_need_a_resync() {
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        // Current epoch is 1; a report claiming epoch 0 is STALE.
+        let outcome = registry.report_transition(
+            "kb-conf",
+            0,
+            BackendState::Handshaking,
+            None,
+            "late-report",
+            "from an observer that missed the registration",
+        );
+        assert_eq!(
+            outcome,
+            Err(BackendRegistryError::StaleGeneration {
+                backend: "kb-conf".into(),
+                reported: 0,
+                current: 1,
+            })
+        );
+        // Zero trace: state, epoch and history unchanged.
+        let record = registry.backend("kb-conf").expect("record");
+        assert_eq!(record.state, BackendState::Created);
+        assert_eq!(record.generation, 1);
+        assert_eq!(record.transitions.len(), 1);
+
+        // A report claiming a FUTURE epoch is refused too — a gap
+        // means the reporter must resync, not push through.
+        assert!(matches!(
+            registry.report_transition(
+                "kb-conf",
+                5,
+                BackendState::Handshaking,
+                None,
+                "from-the-future",
+                ""
+            ),
+            Err(BackendRegistryError::FutureGeneration {
+                reported: 5,
+                current: 1,
+                ..
+            })
+        ));
+        assert_eq!(registry.backend("kb-conf").expect("record").generation, 1);
+
+        // The well-behaved report at the current epoch applies and
+        // bumps the epoch the reporter must observe next.
+        let applied = report(&registry, "kb-conf", BackendState::Handshaking, "go", "")
+            .expect("current-epoch report applies");
+        assert_eq!(applied.generation, 2);
+        assert_eq!(registry.backend("kb-conf").expect("record").generation, 2);
+    }
+
+    #[test]
+    fn epochs_are_strictly_monotonic_across_the_recovery_path() {
+        let registry = BackendRegistry::new();
+        registry
+            .register("kb-conf", BackendKind::EngineBot, 1.0)
+            .expect("register");
+        for (state, reason) in [
+            (BackendState::Handshaking, "go"),
+            (BackendState::Degraded, "slow"),
+            (BackendState::Failed, "timeout"),
+            (BackendState::Recovering, "retry"),
+            (BackendState::Handshaking, "rejoined"),
+        ] {
+            report(&registry, "kb-conf", state, reason, "").expect("step");
+        }
+        let record = registry.backend("kb-conf").expect("record");
+        // Recovery reenters Handshaking with the SAME record — the
+        // epoch never resets, so vintages stay comparable forever.
+        let epochs: Vec<u64> = record.transitions.iter().map(|t| t.generation).collect();
+        assert_eq!(epochs, vec![1, 2, 3, 4, 5, 6]);
+        let mut sorted = epochs.clone();
+        sorted.dedup();
+        assert_eq!(epochs, sorted, "strictly increasing, never reset");
+    }
+
+    #[test]
     fn queries_filter_by_kind_and_state_stably() {
         let registry = BackendRegistry::new();
         registry
@@ -549,7 +653,7 @@ mod tests {
             .register("c-bot", BackendKind::EngineBot, 1.0)
             .expect("register");
         registry
-            .report_transition("a-bot", BackendState::Handshaking, None, "go", "")
+            .report_transition("a-bot", 1, BackendState::Handshaking, None, "go", "")
             .expect("step");
         let ids: Vec<String> = registry
             .by_kind(BackendKind::EngineBot)

@@ -41,8 +41,24 @@ pub enum StoreError {
     InvalidSegment(String),
     #[error("swell metadata at {0} is unreadable: {1}")]
     Corrupt(PathBuf, #[source] serde_json::Error),
+    #[error("worker count must be at least 1 when frozen")]
+    InvalidWorkerCount,
+    #[error("plan freeze is partial: worker_count and plan_digest must be frozen together at creation (ADR-006 D3-1)")]
+    PartialFreeze,
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+/// Creation-time freeze validation (ADR-006 D3-1): the freeze is
+/// atomic — both W and the plan digest, or neither; never a half
+/// freeze, never W = 0.
+fn validate_freeze(metadata: &SwellMetadata) -> Result<(), StoreError> {
+    match (metadata.worker_count, metadata.plan_digest.as_deref()) {
+        (None, None) => Ok(()),
+        (Some(0), _) => Err(StoreError::InvalidWorkerCount),
+        (Some(_), Some(_)) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => Err(StoreError::PartialFreeze),
+    }
 }
 
 /// Persisted swell metadata (`<root>/<swell_id>/metadata.json`).
@@ -53,6 +69,17 @@ pub struct SwellMetadata {
     pub phase: SwellPhase,
     #[serde(default)]
     pub spectrum_path: Option<String>,
+    /// Worker count W, FROZEN at creation (ADR-006 D3-1). There is no
+    /// mutation path: once written, nothing in the store rewrites it —
+    /// shard rules can never silently change mid-execution (D3-3).
+    /// `None` = swell created before a plan freeze existed (legacy
+    /// files keep loading); new freezes must be `Some(W ≥ 1)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_count: Option<u32>,
+    /// ShardPlan digest frozen together with `worker_count` (ADR-006
+    /// D3-1/D3-2) — the Backends verify exactly this on receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_digest: Option<String>,
     pub created_at_unix_ms: u64,
     pub updated_at_unix_ms: u64,
 }
@@ -92,6 +119,7 @@ impl SwellStore {
     /// `metadata.json` and an initial `created` timeline entry.
     pub fn create(&self, mut metadata: SwellMetadata) -> Result<SwellMetadata, StoreError> {
         validate_segment(&metadata.swell_id)?;
+        validate_freeze(&metadata)?;
         let dir = self.swell_dir(&metadata.swell_id);
         fs::create_dir_all(dir.join("evidence"))?;
 
@@ -142,6 +170,8 @@ impl SwellStore {
 
     /// Record a phase transition: rewrite `metadata.json` atomically and
     /// append a `phase` timeline entry (docs/swell.md phase boundaries).
+    /// The creation-time plan freeze (`worker_count` / `plan_digest`)
+    /// is carried forward UNCHANGED — no store API can rewrite it.
     pub fn update_phase(
         &self,
         swell_id: &str,
@@ -273,6 +303,8 @@ mod tests {
             name: format!("{}-load", id),
             phase: SwellPhase::Planned,
             spectrum_path: Some("spectrum.yaml".into()),
+            worker_count: None,
+            plan_digest: None,
             created_at_unix_ms: now_unix_ms(),
             updated_at_unix_ms: now_unix_ms(),
         }
@@ -412,6 +444,61 @@ mod tests {
         let all = store.list().unwrap();
         let ids: Vec<&str> = all.iter().map(|m| m.swell_id.as_str()).collect();
         assert_eq!(ids, ["swell-0001", "swell-0002", "swell-0003"]);
+    }
+
+    #[test]
+    fn worker_count_and_plan_digest_are_frozen_at_creation_and_survive_every_mutation() {
+        let (_d, store) = store();
+        let mut plan = metadata("swell-0001");
+        plan.worker_count = Some(4);
+        plan.plan_digest = Some("deadbeef".into());
+        store.create(plan).unwrap();
+
+        // Phase moves rewrite metadata.json — the frozen fields ride
+        // along untouched.
+        store
+            .update_phase("swell-0001", SwellPhase::Running, "go")
+            .unwrap();
+        store
+            .update_phase("swell-0001", SwellPhase::Completed, "done")
+            .unwrap();
+        let got = store.get("swell-0001").unwrap();
+        assert_eq!(got.worker_count, Some(4), "W frozen at creation");
+        assert_eq!(got.plan_digest.as_deref(), Some("deadbeef"));
+
+        // Legacy files (no freeze fields) still load as unfrozen.
+        let legacy_dir = tempfile::tempdir().unwrap();
+        let legacy_store = SwellStore::open(legacy_dir.path().join("store")).unwrap();
+        legacy_store.create(metadata("legacy")).unwrap();
+        let got = legacy_store.get("legacy").unwrap();
+        assert_eq!(got.worker_count, None);
+        assert_eq!(got.plan_digest, None);
+    }
+
+    #[test]
+    fn invalid_or_partial_freezes_are_refused_at_creation() {
+        let (_d, store) = store();
+        let mut plan = metadata("zero");
+        plan.worker_count = Some(0);
+        plan.plan_digest = Some("deadbeef".into());
+        assert!(matches!(
+            store.create(plan),
+            Err(StoreError::InvalidWorkerCount)
+        ));
+
+        let mut half = metadata("half");
+        half.worker_count = Some(4);
+        assert!(matches!(store.create(half), Err(StoreError::PartialFreeze)));
+
+        let mut other_half = metadata("other-half");
+        other_half.plan_digest = Some("deadbeef".into());
+        assert!(matches!(
+            store.create(other_half),
+            Err(StoreError::PartialFreeze)
+        ));
+
+        // Nothing escaped: refused creations left no directories.
+        assert_eq!(store.list().unwrap(), Vec::<SwellMetadata>::new());
     }
 
     #[test]

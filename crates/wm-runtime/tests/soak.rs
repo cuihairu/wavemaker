@@ -136,6 +136,11 @@ fn env_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+/// Report progress every N cycles (default 100; lower for short measurements).
+fn env_report_every() -> usize {
+    env_usize("WM_SOAK_REPORT_EVERY", 100).max(1)
+}
+
 /// Short soak, CI-safe: a bounded number of swell cycles at a modest actor
 /// count. Verifies the runtime is stable across repeated full lifecycles.
 #[test]
@@ -167,6 +172,7 @@ fn soak_short_repeated_cycles() {
 fn soak_long_wallclock() {
     let actors = env_usize("WM_SOAK_ACTORS", 50_000);
     let seconds = env_usize("WM_SOAK_SECONDS", 86_400);
+    let report_every = env_report_every();
     let start = Instant::now();
     let deadline = start + Duration::from_secs(seconds as u64);
 
@@ -178,12 +184,12 @@ fn soak_long_wallclock() {
         cycles += 1;
         total_events += s.events as u64;
         total_ticks += s.ticks;
-        if cycles.is_multiple_of(100) {
+        if cycles.is_multiple_of(report_every as u64) {
             let elapsed = start.elapsed().as_secs_f64();
             let rate = cycles as f64 / elapsed.max(0.001);
             eprintln!(
                 "[soak] t={elapsed:.0}s cycles={cycles} actors={actors} \
-                 events={total_events} rate={rate:.0} cycles/s rss={}KiB",
+                 events={total_events} rate={rate:.1} cycles/s rss={}KiB",
                 rss_kb()
             );
         }
@@ -193,7 +199,7 @@ fn soak_long_wallclock() {
     let rate = cycles as f64 / elapsed.as_secs_f64().max(0.001);
     eprintln!(
         "[soak] done cycles={cycles} actors={actors} events={total_events} \
-         ticks={total_ticks} elapsed={:?} rate={rate:.0} cycles/s rss={}KiB",
+         ticks={total_ticks} elapsed={:?} rate={rate:.1} cycles/s rss={}KiB",
         elapsed,
         rss_kb()
     );

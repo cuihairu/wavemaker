@@ -22,8 +22,8 @@ pub use shard_plan::{
 };
 pub use config::ControllerConfig;
 pub use registry::{
-    RegistrationDecision, RegistryError, WorkerRecord, WorkerRegistration,
-    WorkerRegistry, WorkerState,
+    AdmissionVerdict, RegistrationDecision, RegistryError, WorkerRecord,
+    WorkerRegistration, WorkerRegistry, WorkerState,
 };
 pub use server::run;
 pub use state::ControllerState;

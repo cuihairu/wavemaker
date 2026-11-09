@@ -323,6 +323,64 @@ impl WorkerRegistry {
             .filter(|record| record.state == state)
             .count()
     }
+
+    /// New-admission verdicts (WM-0507) for the given workers — the
+    /// policy-1 gate: a worker in LostContact freezes NEW load (its
+    /// recorded invalidation time names when the window closed) while
+    /// existing sessions keep running (policy 2). A beat restoring
+    /// Online reopens admission; leaving the mesh (Deregistered) or
+    /// never joining it refuses new load outright.
+    pub fn admission_verdicts(
+        &self,
+        worker_ids: &[&str],
+    ) -> Vec<(String, AdmissionVerdict)> {
+        let inner = self.inner.lock().unwrap();
+        let mut verdicts: Vec<(String, AdmissionVerdict)> = worker_ids
+            .iter()
+            .map(|worker_id| {
+                let verdict = match inner.workers.get(*worker_id) {
+                    Some(record) => match record.state {
+                        WorkerState::Online => AdmissionVerdict::Admit,
+                        WorkerState::LostContact => AdmissionVerdict::Frozen {
+                            invalidated_at_unix_s: record
+                                .lease_invalidated_at_unix_s
+                                .expect("LostContact always carries its invalidation time"),
+                        },
+                        WorkerState::Deregistered => AdmissionVerdict::NotInMesh,
+                    },
+                    None => AdmissionVerdict::NotInMesh,
+                };
+                ((*worker_id).to_string(), verdict)
+            })
+            .collect();
+        verdicts.sort_by(|a, b| a.0.cmp(&b.0));
+        verdicts
+    }
+
+    /// Workers currently admitting new load (exactly the Online set).
+    pub fn admitting_workers(&self) -> Vec<String> {
+        self.online_workers()
+            .into_iter()
+            .map(|record| record.registration.worker_id)
+            .collect()
+    }
+}
+
+/// One new-admission verdict (WM-0507).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AdmissionVerdict {
+    /// Admit new load.
+    Admit,
+    /// New load is frozen — the worker lost contact; the recorded
+    /// invalidation time names when the window closed. Existing
+    /// sessions are untouched (policy 2), and admission reopens on a
+    /// fresh beat.
+    Frozen {
+        invalidated_at_unix_s: u64,
+    },
+    /// The worker is not part of the mesh (deregistered or unknown) —
+    /// never admit load to a worker the controller does not see.
+    NotInMesh,
 }
 
 #[cfg(test)]
@@ -600,5 +658,80 @@ mod tests {
         );
         assert_eq!(registry.count_in_state(WorkerState::Online), 2);
         assert_eq!(registry.count_in_state(WorkerState::Deregistered), 1);
+    }
+
+    #[test]
+    fn lost_contact_freezes_new_admission_and_a_beat_reopens_it() {
+        let registry = WorkerRegistry::new(1000, 5000).expect("lease config");
+        let generation = match registry.register(registration("w1")).expect("accept") {
+            RegistrationDecision::Accepted { generation } => generation,
+            other => panic!("unexpected {other:?}"),
+        };
+        registry.heartbeat("w1", generation);
+        // Online admits.
+        assert_eq!(
+            registry.admission_verdicts(&["w1"]),
+            vec![(
+                "w1".to_string(),
+                AdmissionVerdict::Admit
+            )]
+        );
+        assert_eq!(registry.admitting_workers(), vec!["w1".to_string()]);
+
+        // Lease invalidation freezes NEW load for that worker, naming
+        // when the window closed.
+        {
+            let mut inner = registry.inner.lock().unwrap();
+            let record = inner.workers.get_mut("w1").expect("record");
+            record.last_heartbeat_unix_s =
+                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+        }
+        let invalidated_at = registry.sweep_expired();
+        assert_eq!(invalidated_at, vec!["w1".to_string()]);
+        let verdict = &registry.admission_verdicts(&["w1"])[0].1;
+        let frozen_at = match verdict {
+            AdmissionVerdict::Frozen {
+                invalidated_at_unix_s,
+            } => *invalidated_at_unix_s,
+            other => panic!("expected Frozen, got {other:?}"),
+        };
+        assert!(
+            registry
+                .worker("w1")
+                .expect("record")
+                .lease_invalidated_at_unix_s
+                .is_some(),
+            "the frozen verdict is backed by the recorded invalidation time"
+        );
+        assert!(frozen_at > 0);
+        // Freezing is not a disconnection: the record stays, existing
+        // sessions would continue (policy 2).
+        assert!(registry.worker("w1").is_some());
+        assert!(registry.admitting_workers().is_empty());
+
+        // A fresh beat reopens admission.
+        assert!(registry.heartbeat("w1", generation));
+        assert_eq!(
+            registry.admission_verdicts(&["w1"]),
+            vec![("w1".to_string(), AdmissionVerdict::Admit)]
+        );
+    }
+
+    #[test]
+    fn unknown_and_deregistered_workers_never_admit_new_load() {
+        let registry = WorkerRegistry::new(1000, 5000).expect("lease config");
+        registry.register(registration("left")).expect("accept");
+        registry.deregister("left");
+        let verdicts = registry.admission_verdicts(&["left", "ghost", "alpha"]);
+        assert_eq!(
+            verdicts,
+            vec![
+                ("alpha".to_string(), AdmissionVerdict::NotInMesh),
+                ("ghost".to_string(), AdmissionVerdict::NotInMesh),
+                ("left".to_string(), AdmissionVerdict::NotInMesh),
+            ],
+            "sorted output; unknown and deregistered are both NotInMesh"
+        );
+        assert!(registry.admitting_workers().is_empty());
     }
 }

@@ -12,7 +12,10 @@
 pub mod actor;
 pub mod arrival;
 pub mod clock;
+pub mod codec;
+pub mod framing;
 pub mod lifecycle;
 pub mod rng;
 pub mod scheduler;
 pub mod session;
+pub mod transport;

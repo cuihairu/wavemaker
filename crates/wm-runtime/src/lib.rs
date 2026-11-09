@@ -5,11 +5,11 @@
 //! plus the same seed replays identically in tests and simulations. Async /
 //! real-IO adapters live behind the same traits.
 //!
-//! Module map mirrors docs/native-runtime.md: `clock`, `rng` now; actor,
-//! scheduler, arrival, session, transport, protocol, behavior and metrics
-//! land with their WM tasks.
+//! Module map mirrors docs/native-runtime.md: `clock`, `rng`, `actor`,
+//! `scheduler` now; arrival, session, transport, protocol, behavior and
+//! metrics land with their WM tasks.
 
-// staged in the next commit
+pub mod actor;
 pub mod clock;
 pub mod rng;
-// staged in the next commit
+pub mod scheduler;

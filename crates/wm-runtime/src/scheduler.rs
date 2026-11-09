@@ -1,0 +1,289 @@
+//! Timer Scheduler (WM-0304).
+//!
+//! Binary min-heap with lazy (tombstone) cancellation — the design baselined
+//! by `wm-core`'s `timer_scheduler` benchmark (WM-0011): O(log n) insert,
+//! O(1) cancel request, O(log n) amortized pop with tombstone skipping.
+//! Timers are one-shot; periodic behavior re-schedules on fire.
+
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
+
+/// Stable identity of one scheduled timer, returned by
+/// [`TimerScheduler::schedule`] and accepted by [`TimerScheduler::cancel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TimerId(pub u64);
+
+#[derive(Debug)]
+struct Entry<T> {
+    deadline_ns: u64,
+    seq: u64,
+    payload: T,
+}
+
+impl<T> PartialEq for Entry<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deadline_ns == other.deadline_ns && self.seq == other.seq
+    }
+}
+
+impl<T> Eq for Entry<T> {}
+
+impl<T> Ord for Entry<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // BinaryHeap is a max-heap; invert to get a min-heap keyed by deadline
+        // with FIFO order among equal deadlines.
+        other
+            .deadline_ns
+            .cmp(&self.deadline_ns)
+            .then(other.seq.cmp(&self.seq))
+    }
+}
+
+impl<T> PartialOrd for Entry<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// One-shot timer queue over externally supplied time.
+///
+/// The scheduler is a pure data structure: time comes in through `expire`
+/// calls (typically `clock.now_nanos()`), which keeps it deterministic and
+/// independent of any particular [`crate::clock::Clock`] wiring.
+#[derive(Debug)]
+pub struct TimerScheduler<T> {
+    heap: BinaryHeap<Entry<T>>,
+    cancelled: HashSet<u64>,
+    next_seq: u64,
+}
+
+impl<T> Default for TimerScheduler<T> {
+    fn default() -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+            cancelled: HashSet::new(),
+            next_seq: 0,
+        }
+    }
+}
+
+impl<T> TimerScheduler<T> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Schedule a one-shot timer firing at absolute `deadline_ns`.
+    ///
+    /// A deadline already in the past fires on the next `expire` call with
+    /// `now >= deadline`.
+    pub fn schedule(&mut self, deadline_ns: u64, payload: T) -> TimerId {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.heap.push(Entry {
+            deadline_ns,
+            seq,
+            payload,
+        });
+        TimerId(seq)
+    }
+
+    /// Cancel a timer: later `expire` calls will never fire it.
+    ///
+    /// Returns `false` only when the id is already marked cancelled. The
+    /// return value cannot report whether the timer already fired — handle
+    /// cancellation inherently races the fire — so callers doing cancel
+    /// accounting must keep their own bookkeeping instead of relying on it.
+    /// Cancelling unknown or already-fired ids is harmless.
+    pub fn cancel(&mut self, id: TimerId) -> bool {
+        self.cancelled.insert(id.0)
+    }
+
+    /// Number of entries in the heap, including cancelled ones not yet
+    /// popped (an honest upper bound on live timers).
+    pub fn heap_len(&self) -> usize {
+        self.heap.len()
+    }
+
+    /// Deadline of the next timer that would fire, skipping cancelled
+    /// entries; `None` when nothing live is queued.
+    pub fn next_deadline(&mut self) -> Option<u64> {
+        while let Some(top) = self.heap.peek() {
+            if self.cancelled.contains(&top.seq) {
+                let seq = top.seq;
+                let entry = self.heap.pop();
+                debug_assert!(entry.is_some());
+                self.cancelled.remove(&seq);
+                continue;
+            }
+            return Some(top.deadline_ns);
+        }
+        None
+    }
+
+    /// Fire every timer with `deadline_ns <= now_ns` in deadline order
+    /// (FIFO among equal deadlines), passing `(id, payload)` to `fire`.
+    /// Cancelled timers are skipped silently. Returns the number fired.
+    pub fn expire<F>(&mut self, now_ns: u64, mut fire: F) -> usize
+    where
+        F: FnMut(TimerId, T),
+    {
+        let mut fired = 0;
+        while let Some(top) = self.heap.peek() {
+            if top.deadline_ns > now_ns {
+                break;
+            }
+            let entry = self.heap.pop().expect("peeked entry exists");
+            if self.cancelled.remove(&entry.seq) {
+                continue;
+            }
+            fired += 1;
+            fire(TimerId(entry.seq), entry.payload);
+        }
+        fired
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fires_in_deadline_order_fifo_among_equal_deadlines() {
+        let mut sched: TimerScheduler<&'static str> = TimerScheduler::new();
+        sched.schedule(300, "late");
+        sched.schedule(100, "first");
+        sched.schedule(100, "second");
+        sched.schedule(200, "middle");
+
+        let mut fired = Vec::new();
+        sched.expire(1_000, |_, name| fired.push(name));
+        assert_eq!(fired, vec!["first", "second", "middle", "late"]);
+        assert_eq!(sched.heap_len(), 0);
+    }
+
+    #[test]
+    fn expire_only_fires_due_timers() {
+        let mut sched: TimerScheduler<u64> = TimerScheduler::new();
+        let _early = sched.schedule(100, 1);
+        let _later = sched.schedule(900, 2);
+
+        let mut fired = Vec::new();
+        assert_eq!(sched.expire(150, |_, p| fired.push(p)), 1);
+        assert_eq!(fired, vec![1]);
+        assert_eq!(sched.expire(150, |_, p| fired.push(p)), 0, "one-shot");
+        assert_eq!(sched.expire(900, |_, p| fired.push(p)), 1);
+        assert_eq!(fired, vec![1, 2]);
+    }
+
+    #[test]
+    fn cancel_skips_firing_without_disturbing_others() {
+        let mut sched: TimerScheduler<char> = TimerScheduler::new();
+        let _a = sched.schedule(100, 'a');
+        let b = sched.schedule(110, 'b');
+        let _c = sched.schedule(120, 'c');
+
+        assert!(sched.cancel(b));
+        assert!(!sched.cancel(b), "second cancel is a no-op");
+        // Unknown ids are harmless: cancelling something never scheduled
+        // neither panics nor affects the pending population.
+        sched.cancel(TimerId(99_999));
+
+        let mut fired = Vec::new();
+        sched.expire(1_000, |_, ch| fired.push(ch));
+        assert_eq!(fired, vec!['a', 'c']);
+    }
+
+    #[test]
+    fn cancel_after_fire_is_harmless() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        let id = sched.schedule(10, 7);
+        let mut fired = 0;
+        sched.expire(20, |_, _| fired += 1);
+        assert_eq!(fired, 1);
+        // Handle cancellation raced the fire: no panic, and the fired count
+        // never double-counts on later expires.
+        sched.cancel(id);
+        sched.expire(100, |_, _| fired += 1);
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn past_deadlines_fire_on_next_expire() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        sched.schedule(50, 1);
+        let mut fired = 0;
+        sched.expire(10, |_, _| fired += 1);
+        assert_eq!(fired, 0);
+        sched.expire(50, |_, _| fired += 1);
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn next_deadline_skips_cancelled_top_entries() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        let first = sched.schedule(100, 1);
+        let _second = sched.schedule(200, 2);
+        sched.cancel(first);
+        assert_eq!(sched.next_deadline(), Some(200));
+        let second = sched.schedule(300, 3);
+        sched.cancel(second);
+        assert_eq!(sched.next_deadline(), Some(200));
+    }
+
+    #[test]
+    fn next_deadline_empty_and_fully_cancelled() {
+        let mut sched: TimerScheduler<u8> = TimerScheduler::new();
+        assert_eq!(sched.next_deadline(), None);
+        let id = sched.schedule(5, 1);
+        sched.cancel(id);
+        assert_eq!(sched.next_deadline(), None);
+        assert_eq!(sched.heap_len(), 0, "tombstones drained from the top");
+    }
+
+    #[test]
+    fn integrates_with_manual_clock_steps() {
+        use crate::clock::{Clock, ManualClock};
+
+        let mut clock = ManualClock::new();
+        let mut sched: TimerScheduler<&'static str> = TimerScheduler::new();
+        let now = clock.now_nanos();
+        let a = sched.schedule(now + 1_000, "think");
+        let b = sched.schedule(now + 2_000, "probe");
+        sched.cancel(a);
+
+        let mut log = Vec::new();
+        clock.advance(1_000);
+        let fired = sched.expire(clock.now_nanos(), |_, tag| log.push(tag));
+        assert_eq!((fired, clock.now_nanos() - now), (0, 1_000));
+
+        clock.advance(1_000);
+        let fired = sched.expire(clock.now_nanos(), |id, tag| {
+            log.push(tag);
+            assert_eq!(id, b);
+        });
+        assert_eq!(fired, 1);
+        assert_eq!(log, vec!["probe"]);
+    }
+
+    #[test]
+    fn scales_to_heavy_population_correctly() {
+        // Correctness at the benchmark operating point (50k actors x 4 timers,
+        // half cancelled) — throughput lives in the criterion bench.
+        let mut sched: TimerScheduler<(usize, usize)> = TimerScheduler::new();
+        let mut ids = Vec::with_capacity(200_000);
+        for actor in 0..50_000 {
+            for slot in 0..4 {
+                let deadline = 1_000_000 * (10 * (slot + 1) as u64 + (actor as u64) % 7);
+                ids.push(sched.schedule(deadline, (actor, slot)));
+            }
+        }
+        for (index, id) in ids.iter().enumerate() {
+            if index % 2 == 0 {
+                sched.cancel(*id);
+            }
+        }
+        let mut fired = 0usize;
+        sched.expire(u64::MAX / 2, |_, _| fired += 1);
+        assert_eq!(fired, 100_000);
+    }
+}

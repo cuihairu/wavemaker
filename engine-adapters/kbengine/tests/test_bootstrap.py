@@ -177,17 +177,36 @@ def test_config_from_env_injection():
         "WAVEMAKER_BRIDGE_TOKEN": "tok",
         "WAVEMAKER_SWELL_ID": "sw-1",
         "WAVEMAKER_BACKEND_ID": "be-1",
+        "WAVEMAKER_BACKEND_GENERATION": "12",
     }
     cfg = BootstrapConfig.from_env(env)
     assert cfg.ipc_address == "/tmp/wm.sock"
     assert cfg.token == "tok"
     assert cfg.swell_id == "sw-1"
     assert cfg.backend_id == "be-1"
+    assert cfg.backend_generation == 12
     assert cfg.has_ipc
 
     empty = BootstrapConfig.from_env({})
     assert not empty.has_ipc
     assert empty.ipc_address == ""
+    assert empty.backend_generation == 0, "missing generation is unset"
+
+
+def test_config_generation_malformed_values_are_unset():
+    # onInit must never raise on bad injection (audit §5), so any value
+    # that is not a positive decimal becomes 0.
+    for raw, expected in [
+        ("not-a-number", 0),
+        ("", 0),
+        ("  7  ", 7),  # surrounding whitespace tolerated
+        ("-3", 0),
+        ("0", 0),
+        (None, 0),
+        (12, 12),  # already an int passes through
+    ]:
+        cfg = BootstrapConfig(backend_generation=BootstrapConfig._parse_generation(raw))
+        assert cfg.backend_generation == expected, f"{raw!r} -> {expected}"
 
 
 def test_capability_report_is_handshake_shaped():
@@ -197,6 +216,7 @@ def test_capability_report_is_handshake_shaped():
     assert report["engine_name"] == "kbengine"
     assert report["adapter_name"] == "wavemaker-kbengine-bridge"
     assert report["backend_id"] == "be-9"
+    assert report["backend_generation"] == 0, "unset by default"
     assert report["capabilities"] is CAPABILITIES
 
 

@@ -37,6 +37,7 @@ def make_bootstrap(**cfg):
         token=cfg.get("token", ""),
         swell_id=cfg.get("swell", ""),
         backend_id=cfg.get("backend", ""),
+        backend_generation=cfg.get("generation", 0),
     )
     fe = FakeEngine()
     return fe, Bootstrap(EnginePort(fe), config)
@@ -591,6 +592,7 @@ def test_handshake_payload_mirrors_proto_and_capability_report():
         "adapter_name": "wavemaker-kbengine-bridge",
         "adapter_version": "0.1.0",
         "backend_id": "be-1",
+        "backend_generation": 12,
         "capabilities": CAPABILITIES,
         "scheduling_resolution_ms": 100,
         "arrival_batch_ms": 1000,
@@ -600,6 +602,9 @@ def test_handshake_payload_mirrors_proto_and_capability_report():
     assert hs["protocol_version"] == PROTOCOL_VERSION == 1
     assert hs["capabilities"] is CAPABILITIES, "honest catalog by reference"
     assert hs["engine_version"] == "9.9-test"
+    # Launch hint rides the additive extension field; the ack's generation
+    # stays authoritative (WM-0205).
+    assert hs["backend_generation"] == 12
     # No invented fields: everything comes from the report.
     assert set(hs) == set(report) | {"kind"}
 
@@ -621,11 +626,12 @@ def test_parse_ack_accepts_only_ok_and_shaped_messages():
 
 def test_handshake_exchange_accepts_to_ready():
     server = LoopbackServer.unix()
-    engine, b = make_bootstrap(ipc=server.address, backend="be-3")
+    engine, b = make_bootstrap(ipc=server.address, backend="be-3", generation=6)
     try:
         b.on_init(0)
         hs = server.recv_frame()
         assert hs["kind"] == "handshake"
+        assert hs["backend_generation"] == 6, "launch hint on the wire (WM-0205)"
         assert hs["capabilities"]["scheduling"]["exact_arrival"] == "degraded"
 
         server.send_message(ack(generation=42))

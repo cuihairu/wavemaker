@@ -47,19 +47,35 @@ class BootstrapConfig(object):
     """Supervisor-injected configuration for one Bridge instance.
 
     The injection channel is environment variables on the bot child process
-    (WM-0205 may extend this to an explicit config file or CLI arguments).
+    (set by the Rust launcher, crates/wm-supervisor/src/kbengine.rs — the
+    variable names there are the single source of truth for both sides).
     """
 
     ENV_IPC = "WAVEMAKER_BRIDGE_IPC"
     ENV_TOKEN = "WAVEMAKER_BRIDGE_TOKEN"
     ENV_SWELL_ID = "WAVEMAKER_SWELL_ID"
     ENV_BACKEND_ID = "WAVEMAKER_BACKEND_ID"
+    ENV_BACKEND_GENERATION = "WAVEMAKER_BACKEND_GENERATION"
 
-    def __init__(self, ipc_address="", token="", swell_id="", backend_id=""):
+    def __init__(self, ipc_address="", token="", swell_id="", backend_id="",
+                 backend_generation=0):
         self.ipc_address = ipc_address
         self.token = token
         self.swell_id = swell_id
         self.backend_id = backend_id
+        # Launch-hint generation (0 = unset). The handshake ack's generation
+        # stays authoritative once the Supervisor replies.
+        self.backend_generation = backend_generation
+
+    @staticmethod
+    def _parse_generation(raw):
+        """Decimal u64; anything malformed is 0 (unset) — onInit must never
+        raise on bad injection (audit §5: an onInit exception kills bots)."""
+        try:
+            value = int(str(raw).strip())
+        except (TypeError, ValueError):
+            return 0
+        return value if value > 0 else 0
 
     @classmethod
     def from_env(cls, environ=None):
@@ -69,6 +85,9 @@ class BootstrapConfig(object):
             token=env.get(cls.ENV_TOKEN, ""),
             swell_id=env.get(cls.ENV_SWELL_ID, ""),
             backend_id=env.get(cls.ENV_BACKEND_ID, ""),
+            backend_generation=cls._parse_generation(
+                env.get(cls.ENV_BACKEND_GENERATION)
+            ),
         )
 
     @property
@@ -134,6 +153,10 @@ class Bootstrap(object):
             "adapter_name": "wavemaker-kbengine-bridge",
             "adapter_version": "0.1.0",
             "backend_id": self._config.backend_id,
+            # Launch hint (0 = unset); the ack's generation stays
+            # authoritative. Additive extension beyond the frozen proto
+            # wire — see handshake.build_handshake.
+            "backend_generation": self._config.backend_generation,
             "capabilities": CAPABILITIES,
             "scheduling_resolution_ms": SCHEDULING_RESOLUTION_MS,
             "arrival_batch_ms": ARRIVAL_BATCH_MS,

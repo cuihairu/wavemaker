@@ -22,12 +22,16 @@ use crate::{ProcessSpec, RestartPolicy, StreamSink};
 /// Local IPC address the Bridge connects to (`unix:<path>`, a bare socket
 /// path, or `tcp:<host>:<port>`; parsed by `bridge.ipc_client.parse_address`).
 pub const BRIDGE_IPC_ENV: &str = "WAVEMAKER_BRIDGE_IPC";
-/// Shared secret for the IPC session (presentation-only until WM-0205).
+/// Shared secret for the IPC session (checked by the Supervisor listener).
 pub const BRIDGE_TOKEN_ENV: &str = "WAVEMAKER_BRIDGE_TOKEN";
 /// Swell this Backend instance serves.
 pub const SWELL_ID_ENV: &str = "WAVEMAKER_SWELL_ID";
 /// Backend instance id announced in the Bridge handshake.
 pub const BACKEND_ID_ENV: &str = "WAVEMAKER_BACKEND_ID";
+/// Backend generation this process was launched for (decimal u64; 0 =
+/// unset). The handshake ack's generation stays authoritative — this is the
+/// launch hint the Supervisor side can cross-check against its own record.
+pub const BACKEND_GENERATION_ENV: &str = "WAVEMAKER_BACKEND_GENERATION";
 
 /// Everything needed to launch one KBEngine bots process (plan §7.2
 /// ProcessSpec specialised for the KBEngine adapter).
@@ -48,13 +52,15 @@ pub struct BotsProcessSpec {
     pub swell_id: String,
     /// Injected as [`BACKEND_ID_ENV`].
     pub backend_id: String,
+    /// Injected as [`BACKEND_GENERATION_ENV`] (0 = unset).
+    pub backend_generation: u64,
     /// Additional environment for the child (PATH tweaks, engine vars).
     pub extra_environment: HashMap<String, String>,
     pub shutdown_grace_period_ms: u64,
 }
 
 impl BotsProcessSpec {
-    /// Minimal spec: bots binary plus the four Bridge variables.
+    /// Minimal spec: bots binary plus the Bridge variables.
     pub fn new(bots_executable: impl Into<String>, bridge_ipc: impl Into<String>) -> Self {
         Self {
             bots_executable: bots_executable.into(),
@@ -64,6 +70,7 @@ impl BotsProcessSpec {
             bridge_token: String::new(),
             swell_id: String::new(),
             backend_id: String::new(),
+            backend_generation: 0,
             extra_environment: HashMap::new(),
             shutdown_grace_period_ms: 5000,
         }
@@ -71,11 +78,15 @@ impl BotsProcessSpec {
 
     /// The exact environment the Bridge bootstrap reads at `onInit`.
     pub fn bridge_environment(&self) -> HashMap<String, String> {
-        let mut env = HashMap::with_capacity(4 + self.extra_environment.len());
+        let mut env = HashMap::with_capacity(5 + self.extra_environment.len());
         env.insert(BRIDGE_IPC_ENV.to_string(), self.bridge_ipc.clone());
         env.insert(BRIDGE_TOKEN_ENV.to_string(), self.bridge_token.clone());
         env.insert(SWELL_ID_ENV.to_string(), self.swell_id.clone());
         env.insert(BACKEND_ID_ENV.to_string(), self.backend_id.clone());
+        env.insert(
+            BACKEND_GENERATION_ENV.to_string(),
+            self.backend_generation.to_string(),
+        );
         env.extend(self.extra_environment.clone());
         env
     }
@@ -110,6 +121,7 @@ mod tests {
         assert_eq!(BRIDGE_TOKEN_ENV, "WAVEMAKER_BRIDGE_TOKEN");
         assert_eq!(SWELL_ID_ENV, "WAVEMAKER_SWELL_ID");
         assert_eq!(BACKEND_ID_ENV, "WAVEMAKER_BACKEND_ID");
+        assert_eq!(BACKEND_GENERATION_ENV, "WAVEMAKER_BACKEND_GENERATION");
     }
 
     #[test]
@@ -118,6 +130,7 @@ mod tests {
         spec.bridge_token = "tok".into();
         spec.swell_id = "sw-1".into();
         spec.backend_id = "be-9".into();
+        spec.backend_generation = 12;
         spec.extra_environment
             .insert("KBE_ROOT".to_string(), "/opt/kbe".to_string());
         let env = spec.bridge_environment();
@@ -125,6 +138,7 @@ mod tests {
         assert_eq!(env.get(BRIDGE_TOKEN_ENV).unwrap(), "tok");
         assert_eq!(env.get(SWELL_ID_ENV).unwrap(), "sw-1");
         assert_eq!(env.get(BACKEND_ID_ENV).unwrap(), "be-9");
+        assert_eq!(env.get(BACKEND_GENERATION_ENV).unwrap(), "12");
         assert_eq!(env.get("KBE_ROOT").unwrap(), "/opt/kbe");
     }
 

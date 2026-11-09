@@ -36,6 +36,11 @@ def build_handshake(report):
         "adapter_name": report["adapter_name"],
         "adapter_version": report["adapter_version"],
         "backend_id": report["backend_id"],
+        # Additive extension beyond the frozen proto wire (EngineHandshake
+        # has no generation field): the launch hint injected via
+        # WAVEMAKER_BACKEND_GENERATION, letting the Supervisor cross-check
+        # against its own record. The ack's generation stays authoritative.
+        "backend_generation": report["backend_generation"],
         "capabilities": report["capabilities"],
         "scheduling_resolution_ms": report["scheduling_resolution_ms"],
         "arrival_batch_ms": report["arrival_batch_ms"],

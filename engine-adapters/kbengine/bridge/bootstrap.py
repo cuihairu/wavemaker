@@ -30,6 +30,8 @@ Constraints honoured here (docs/spec/kbengine-api-audit.md §8.3):
 
 import functools
 import os
+import threading
+import time
 import traceback
 
 from .bot_registry import collect_bot_snapshot
@@ -107,7 +109,13 @@ class Bootstrap(object):
     # gameUpdateHertz = 10 quantizes delays to 100 ms.
     PUMP_INTERVAL_S = SCHEDULING_RESOLUTION_MS / 1000.0
 
-    def __init__(self, engine, config, queue=None):
+    # Heartbeat cadence (WM-0212): one beat per 10 pump ticks = 1 s — the
+    # engine's own creation-gate cadence (audit §8.1 S8), not a wire
+    # requirement. Carries liveness plus transport/lifecycle state.
+    HEARTBEAT_TICKS = 10
+
+    def __init__(self, engine, config, queue=None,
+                 reconnect_initial_s=1.0, reconnect_max_s=10.0):
         self._engine = engine
         self._config = config
         self._queue = queue if queue is not None else CommandQueue()
@@ -117,6 +125,15 @@ class Bootstrap(object):
         self._client = None
         self._handshake_generation = 0
         self._refusal_reason = ""
+        # WM-0212: handshake bookkeeping shared with the reconnect thread.
+        # All reads/writes go through _session_lock; the reconnect thread
+        # only flips flags — every protocol send stays on the pump.
+        self._session_lock = threading.Lock()
+        self._handshake_pending = False
+        self._reconnect_initial_s = reconnect_initial_s
+        self._reconnect_max_s = reconnect_max_s
+        self._heartbeat_seq = 0
+        self._ticks = 0
         self._dispatcher = CommandDispatcher(
             self._send_command_result, lambda: self._handshake_generation
         )
@@ -200,18 +217,54 @@ class Bootstrap(object):
                 self._config.ipc_address,
                 self._queue,
                 OutboundQueue(DEFAULT_OUTBOUND_LIMIT),
+                reconnect_backoff=(
+                    self._reconnect_initial_s, self._reconnect_max_s),
             )
             self._client.connect()
             # The handshake is the first outbound message (WM-0203); send is
             # a non-blocking enqueue, so on_init stays cheap on the engine
             # thread. A failed connect leaves it unsent — the state stays
             # `running` (handshake pending) and WM-0212's reconnection owns
-            # the retry.
+            # the retry, re-sending the handshake once a session is up.
             if self._client.is_connected:
-                self._client.send_message(build_handshake(self.capability_report()))
+                self._send_handshake()
+            else:
+                with self._session_lock:
+                    self._handshake_pending = True
+            # WM-0212: reconnect runs on its own daemon thread (a bounded
+            # connect can block up to 2 s — never on the scripting thread).
+            # It stops itself when the session is refused/stopped.
+            self._client.start_reconnect(
+                should_retry=self._session_wanted,
+                on_reconnect=self._on_session_reconnected,
+            )
         self._state = "running"
         self._arm_pump()
         return self._state
+
+    def _send_handshake(self):
+        """Enqueue the handshake; True when it was queued for sending."""
+        message = build_handshake(self.capability_report())
+        return self._client.send_message(message)
+
+    def _session_wanted(self):
+        """Reconnect gate (WM-0212, runs on the reconnect thread): keep
+        retrying only while a protocol session makes sense — never after a
+        refusal or shutdown."""
+        return self._state in ("running", "ready", "draining")
+
+    def _on_session_reconnected(self):
+        """Reconnect-thread callback after a fresh transport session (the
+        Supervisor assigns generations per session, so the old one is dead
+        regardless of its ack): reset the generation, mark the handshake
+        pending and drop back to `running`. The handshake itself goes out
+        from the next pump tick — this thread never sends protocol traffic
+        (one writer, one enqueue path)."""
+        with self._session_lock:
+            self._handshake_generation = 0
+            self._handshake_pending = True
+            if self._state in ("ready", "draining"):
+                self._state = "running"
 
     def on_finish(self):
         """Entry from the engine entry script's `onFinish()` (no args).
@@ -249,6 +302,33 @@ class Bootstrap(object):
             self.PUMP_INTERVAL_S, functools.partial(self._on_pump)
         )
 
+    def _pump_session_upkeep(self):
+        """Send a pending handshake when the transport is up (WM-0212).
+        The pending flag clears only after a successful enqueue — a failed
+        send (session dropped again) retries on the next tick."""
+        if self._client is None:
+            return
+        with self._session_lock:
+            pending = self._handshake_pending
+        if pending and self._client.is_connected:
+            if self._send_handshake():
+                with self._session_lock:
+                    self._handshake_pending = False
+
+    def _send_heartbeat(self):
+        """One heartbeat (WM-0212): liveness + transport/lifecycle state.
+        Non-blocking enqueue; a disconnected session drops it silently (the
+        reconnect thread owns recovery)."""
+        self._heartbeat_seq += 1
+        self.send_message({
+            "kind": "heartbeat",
+            "sequence": self._heartbeat_seq,
+            "generation": self._handshake_generation,
+            "bridge_state": self._state,
+            "ipc": self.ipc_stats(),
+            "monotonic": time.monotonic(),
+        })
+
     def _teardown_session(self):
         """Inline session teardown (synchronous, bounded): close the IPC
         client and cancel the pump. Used by both the shutdown path (WM-0211)
@@ -277,6 +357,14 @@ class Bootstrap(object):
             # once per tick; raw records buffer for the event layer
             # (WM-0213 owns the wire envelope and sequencing).
             self._connections.poll(self._engine.bots)
+            # WM-0212: the pending handshake goes out here (covers both the
+            # post-reconnect re-handshake and a Supervisor that appeared
+            # after on_init), and the heartbeat keeps the session visibly
+            # alive — all enqueues, S2-safe.
+            self._ticks += 1
+            self._pump_session_upkeep()
+            if self._ticks % self.HEARTBEAT_TICKS == 0:
+                self._send_heartbeat()
         except Exception:
             # S3: a script exception is printed and swallowed by the engine;
             # the bridge state machine must not depend on a callback having
@@ -420,5 +508,7 @@ class Bootstrap(object):
             self._state = "refused"
             self._refusal_reason = reason
             return
-        self._handshake_generation = generation
+        with self._session_lock:
+            self._handshake_generation = generation
+            self._handshake_pending = False
         self._state = "ready"

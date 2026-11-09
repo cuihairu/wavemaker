@@ -46,7 +46,11 @@ def make_bootstrap(**cfg):
         backend_generation=cfg.get("generation", 0),
     )
     fe = FakeEngine()
-    return fe, Bootstrap(EnginePort(fe), config)
+    return fe, Bootstrap(
+        EnginePort(fe), config,
+        reconnect_initial_s=cfg.get("reconnect_initial", 1.0),
+        reconnect_max_s=cfg.get("reconnect_max", 10.0),
+    )
 
 
 def frame(payload):
@@ -74,12 +78,12 @@ class LoopbackServer(object):
         self._accept_thread.start()
 
     @classmethod
-    def unix(cls):
-        path = os.path.join(
-            tempfile.mkdtemp(prefix="wm-ipc-test-"), "bridge.sock"
-        )
+    def unix(cls, path=None):
+        if path is None:
+            path = os.path.join(
+                tempfile.mkdtemp(prefix="wm-ipc-test-"), "bridge.sock"
+            )
         return cls(socket.AF_UNIX, path)
-
     @classmethod
     def tcp(cls):
         # Bind once, with port 0 letting the kernel pick a free port —
@@ -1072,6 +1076,211 @@ def test_shutdown_idempotent_and_repeatable():
         assert server.recv_frame()["result"]["code"] == "OK"
         engine.fire(b.pump_id)  # deferred teardown tick
         assert b.state == "stopped"
+    finally:
+        b.on_finish()
+        server.close()
+
+
+# -- heartbeat and reconnection (WM-0212) ------------------------------------
+
+class ReconnectServer(object):
+    """TCP loopback listener that accepts connections one after another on
+    the same listening socket — the WM-0212 reconnection counterpart of the
+    one-shot LoopbackServer."""
+
+    def __init__(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.bind(("127.0.0.1", 0))
+        self._port = self._sock.getsockname()[1]
+        self._sock.listen(1)
+        self._closed = False
+        self._conn = None
+        self._buf = bytearray()
+        self.connections = 0
+        self._accept_thread = threading.Thread(
+            target=self._accept_loop, daemon=True
+        )
+        self._accept_thread.start()
+
+    def _accept_loop(self):
+        while not self._closed:
+            try:
+                conn, _ = self._sock.accept()
+            except OSError:
+                return
+            conn.settimeout(5.0)
+            self._conn = conn
+            self.connections += 1
+
+    @property
+    def address(self):
+        return "tcp:127.0.0.1:%d" % self._port
+
+    def drop_connection(self):
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except OSError:
+                pass
+            self._conn = None
+
+    def wait_connection(self, timeout=5.0):
+        deadline = 500
+        while self._conn is None and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        assert self._conn is not None, "client never (re)connected"
+
+    def recv_frame(self, timeout=5.0):
+        self.wait_connection(timeout)
+        self._conn.settimeout(timeout)
+        while True:
+            if len(self._buf) >= 4:
+                (length,) = struct.unpack_from(">I", self._buf, 0)
+                if len(self._buf) >= 4 + length:
+                    payload = bytes(self._buf[4:4 + length])
+                    del self._buf[:4 + length]
+                    return json.loads(payload.decode("utf-8"))
+            chunk = self._conn.recv(65536)
+            assert chunk != b"", "client closed the connection"
+            self._buf.extend(chunk)
+
+    def send_message(self, message):
+        self.wait_connection()
+        self._conn.sendall(encode_frame(message))
+
+    def close(self):
+        self._closed = True
+        for sock in (self._conn, self._sock):
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+
+
+def test_reconnect_restores_session_and_rehandshakes():
+    server = ReconnectServer()
+    engine, b = make_bootstrap(
+        ipc=server.address, reconnect_initial=0.05, reconnect_max=0.2)
+    try:
+        b.on_init(0)
+        assert server.recv_frame()["kind"] == "handshake"
+        server.send_message(ack(generation=42))
+        wait_command(b, engine)
+        assert b.state == "ready"
+        assert b.handshake_generation == 42
+        assert server.connections == 1
+
+        # The transport dies (Supervisor restart): the reconnect thread
+        # recovers on its own; the scripting thread never blocks.
+        server.drop_connection()
+        deadline = 500
+        while server.connections < 2 and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        assert server.connections == 2, "reconnect thread restored transport"
+
+        # The pending handshake goes out on a pump tick after the reconnect
+        # callback flipped the flag — poll with fires until the flag clears
+        # (the callback may already have run before the first fire).
+        deadline = 300
+        while (b.state != "running" or b._handshake_pending) and deadline:
+            deadline -= 1
+            engine.fire(b.pump_id)
+            threading.Event().wait(0.01)
+        assert b.state == "running", "on_reconnect reset the session state"
+        assert not b._handshake_pending, "handshake enqueued on a pump tick"
+        hs2 = server.recv_frame()
+        assert hs2["kind"] == "handshake", "new session re-handshakes"
+        assert b.state == "running", "back to handshake-pending"
+        assert b.handshake_generation == 0, "old generation is dead"
+
+        server.send_message(ack(generation=43))
+        wait_command(b, engine)
+        assert b.state == "ready"
+        assert b.handshake_generation == 43
+        assert b.ipc_stats()["reconnects"] == 1
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_supervisor_appearing_after_on_init_gets_the_handshake():
+    path = os.path.join(tempfile.mkdtemp(prefix="wm-late-"), "late.sock")
+    engine, b = make_bootstrap(
+        ipc=path, reconnect_initial=0.05, reconnect_max=0.2)
+    server = None
+    try:
+        b.on_init(0)
+        assert not b.client.is_connected, "no listener yet"
+        assert len(engine.scheduled) == 1, "pump alive without a session"
+        assert b.state == "running"
+
+        server = LoopbackServer.unix(path)  # the Supervisor listener appears
+        deadline = 500
+        while not b.client.is_connected and deadline:
+            deadline -= 1
+            threading.Event().wait(0.01)
+        assert b.client.is_connected, "reconnect thread found the listener"
+
+        # The pending handshake goes out on a pump tick after the reconnect
+        # callback flipped the flag — poll with fires until it clears.
+        deadline = 300
+        while b._handshake_pending and deadline:
+            deadline -= 1
+            engine.fire(b.pump_id)
+            threading.Event().wait(0.01)
+        assert not b._handshake_pending, "handshake enqueued on a pump tick"
+        assert server.recv_frame()["kind"] == "handshake"
+        server.send_message(ack(generation=9))
+        wait_command(b, engine)
+        assert b.state == "ready"
+        assert b.handshake_generation == 9
+    finally:
+        b.on_finish()
+        if server is not None:
+            server.close()
+
+
+def test_refusal_closes_session_and_stops_reconnection():
+    server = ReconnectServer()
+    engine, b = make_bootstrap(
+        ipc=server.address, reconnect_initial=0.05, reconnect_max=0.2)
+    try:
+        b.on_init(0)
+        assert server.recv_frame()["kind"] == "handshake"
+        server.send_message(ack("UNSUPPORTED", 0, "protocol_version"))
+        wait_command(b, engine)
+        assert b.state == "refused"
+        assert b.client is None, "refusal tore the session down"
+
+        server.drop_connection()
+        threading.Event().wait(0.15)  # any stray reconnect cycle would show
+        assert server.connections == 1, "no reconnect after refusal"
+        assert not b._session_wanted()
+    finally:
+        b.on_finish()
+        server.close()
+
+
+def test_heartbeat_keeps_the_session_visibly_alive():
+    server = LoopbackServer.unix()
+    engine, b = make_bootstrap(ipc=server.address)
+    try:
+        complete_handshake(server, engine, b, generation=42)
+        for _ in range(Bootstrap.HEARTBEAT_TICKS):
+            engine.fire(b.pump_id)
+        beat = server.recv_frame()
+        assert beat["kind"] == "heartbeat"
+        assert beat["sequence"] == 1
+        assert beat["generation"] == 42
+        assert beat["bridge_state"] == "ready"
+        assert isinstance(beat["ipc"], dict) and "sent" in beat["ipc"]
+
+        for _ in range(Bootstrap.HEARTBEAT_TICKS):
+            engine.fire(b.pump_id)
+        assert server.recv_frame()["sequence"] == 2, "sequence advances"
     finally:
         b.on_finish()
         server.close()

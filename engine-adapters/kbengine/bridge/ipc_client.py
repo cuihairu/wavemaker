@@ -22,6 +22,7 @@ Threading model (docs/bridge.md "Bridge Threading Model"; audit
     socket --> receiver thread --> inbound queue --> engine pump
                                                    (scripting thread)
     engine thread --> outbound queue --> sender thread --> socket
+    reconnect thread (WM-0212) --> close+connect retries
 
 The receiver thread never calls into the engine scripting API: it only
 enqueues parsed messages (§8.3 #1; S1 makes cross-thread script calls
@@ -30,10 +31,15 @@ caller's thread: a full kernel buffer would stall the engine main loop
 (S2), so outbound messages go through a bounded queue drained by a
 sender thread; overflow drops the newest message and is counted.
 
-Heartbeat and reconnection policy is WM-0212. This module owns
-connect / framing / routing / close and reports connection state and
-error counters for that layer to build on; it does not retry on its
-own, and a lost connection never raises into the caller.
+Reconnection (WM-0212): a dedicated daemon thread retries
+teardown+connect with capped exponential backoff. The scripting thread
+never reconnects — a bounded connect can still block for up to 2 s,
+which would stall the engine tick (audit §8.1: one blocked callback
+holds timers, recv, heartbeats and disconnect detection hostage). A
+`should_retry` gate lets the owner stop the loop (refused/stopped
+sessions), and `on_reconnect` lets it re-run session setup (handshake
+re-send) — both run on the reconnect thread and may only touch
+enqueue-only APIs.
 """
 
 import json
@@ -41,6 +47,8 @@ import select
 import socket
 import struct
 import threading
+import time
+import traceback
 
 # A frame larger than this cannot be legitimate (handshake payloads and
 # command batches are far below it): refusing the connection beats
@@ -209,7 +217,7 @@ class OutboundQueue(object):
 
 
 class IpcClient(object):
-    """Local IPC client: connect, frame, route, close.
+    """Local IPC client: connect, frame, route, close, reconnect.
 
     One client per Bridge instance. `connect()` returns False instead of
     raising — `Bootstrap.on_init` must not abort engine startup over a
@@ -219,16 +227,27 @@ class IpcClient(object):
     """
 
     def __init__(self, address, inbound_queue, outbound_queue=None,
-                 max_frame_bytes=MAX_FRAME_BYTES, poll_seconds=0.05):
+                 max_frame_bytes=MAX_FRAME_BYTES, poll_seconds=0.05,
+                 reconnect_backoff=(0.2, 5.0)):
         self._address = address
         self._inbound = inbound_queue
         self._outbound = outbound_queue if outbound_queue is not None \
             else OutboundQueue()
         self._max_frame = max_frame_bytes
         self._poll = poll_seconds
+        # WM-0212 reconnection: capped exponential backoff, retried by a
+        # dedicated thread so the scripting thread never blocks (a bounded
+        # connect can still take up to 2 s). Armed explicitly via
+        # start_reconnect by the bootstrap.
+        self._backoff = reconnect_backoff
+        self._should_retry = None
+        self._on_reconnect = None
+        self._reconnector = None
+        self._reconnect_wake = threading.Event()
         self._sock = None
         self._connected = False
         self._stop = False
+        self._closed = False
         self._receiver = None
         self._sender = None
         # _lock guards state + counters; _connect_lock serialises connect so
@@ -245,12 +264,16 @@ class IpcClient(object):
             "recv_errors": 0,
             "send_errors": 0,
             "connect_errors": 0,
+            "reconnects": 0,
         }
 
     # -- lifecycle -----------------------------------------------------------
 
     def connect(self):
         """Open the connection and start both threads. Returns success."""
+        return self._connect_once()
+
+    def _connect_once(self):
         with self._connect_lock:
             with self._lock:
                 if self._sock is not None:
@@ -284,14 +307,80 @@ class IpcClient(object):
                 self._sender.start()
             return True
 
-    def close(self, timeout=2.0):
-        """Synchronously stop both threads and close the socket.
+    def start_reconnect(self, should_retry=None, on_reconnect=None):
+        """Arm the WM-0212 reconnect thread (idempotent).
 
-        Safe to call twice; returns True when both threads exited within
-        `timeout`. Outbound messages still queued are dropped (and counted)
-        — finishing is `onFinish`'s synchronous business, never an async
-        teardown (§8.3 #5).
+        `should_retry()` gates each cycle (the bootstrap refuses retries
+        once the session is refused/stopped); `on_reconnect()` fires after
+        a successful re-connection so the owner can redo session setup
+        (handshake re-send). Both run on the reconnect thread and must only
+        touch enqueue-only APIs (never the engine scripting surface).
         """
+        with self._lock:
+            if self._closed or self._reconnector is not None:
+                return
+            self._should_retry = should_retry or (lambda: True)
+            self._on_reconnect = on_reconnect
+            self._reconnect_wake.clear()
+            thread = threading.Thread(
+                target=self._reconnect_loop, name="wm-bridge-reconnect"
+            )
+            thread.daemon = True
+            self._reconnector = thread
+        thread.start()
+
+    def _reconnect_loop(self):
+        initial, cap = self._backoff
+        delay = initial
+        while True:
+            self._reconnect_wake.wait(delay)
+            with self._lock:
+                if self._closed:
+                    return
+            try:
+                if not self._should_retry():
+                    return
+            except Exception:
+                # A gate error must not kill the loop (S3 discipline); the
+                # next cycle re-checks.
+                continue
+            if self.is_connected:
+                delay = initial  # healthy session: reset the backoff
+                continue
+            # Recover: tear the dead session down (bounded; the transport
+            # threads usually already exited on the disconnect), then
+            # reconnect. Never the scripting thread (S2/audit §8.1).
+            self._close_transport(0.5)
+            if self._connect_once():
+                self._bump("reconnects")
+                callback = self._on_reconnect
+                if callback is not None:
+                    try:
+                        callback()
+                    except Exception:
+                        traceback.print_exc()
+                delay = initial
+            else:
+                delay = min(delay * 2, cap)
+
+    def close(self, timeout=2.0):
+        """Synchronously stop the reconnect thread, both transport threads
+        and the socket.
+
+        Safe to call twice; returns True when the transport threads exited
+        within `timeout`. Outbound messages still queued are dropped (and
+        counted) — finishing is `onFinish`'s synchronous business, never an
+        async teardown (§8.3 #5).
+        """
+        with self._lock:
+            self._closed = True
+        self._reconnect_wake.set()
+        reconnector = self._reconnector
+        if reconnector is not None and reconnector is not threading.current_thread():
+            reconnector.join(timeout)
+        return self._close_transport(timeout)
+
+    def _close_transport(self, timeout):
         with self._connect_lock:
             with self._lock:
                 if self._sock is None:

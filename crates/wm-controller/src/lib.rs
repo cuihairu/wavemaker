@@ -7,6 +7,7 @@ pub mod capacity;
 pub mod config;
 pub mod control;
 pub mod http;
+pub mod mixed_swell;
 pub mod persistence;
 pub mod recovery;
 pub mod registry;
@@ -23,6 +24,10 @@ pub use backend_registry::{
     BackendState, BackendTransition,
 };
 pub use capacity::ResourceCapacity;
+pub use mixed_swell::{
+    build_mixed_swell_report, verify_mixed_plan_conformance, KindGroupReport,
+    MixedReportError, MixedSwellReport, PlanConformanceError,
+};
 pub use persistence::{
     load_snapshot, restore_controller, save_snapshot, ControllerSnapshot, PersistenceError,
 };

@@ -469,9 +469,12 @@ mod tests {
     #[tokio::test]
     async fn stderr_tail_is_captured_for_failure_records() {
         let mut sup = NativeProcessLauncher::new();
+        // The output repeats in a loop so the tail has it whenever
+        // terminate lands — a single early echo raced the settle delay
+        // under full-workspace parallelism and flaked the gate.
         sup.start(&ProcessSpec::new(
             "/bin/sh",
-            &["-c", "echo boom >&2; echo ran-ok; sleep 30"],
+            &["-c", "while :; do echo boom >&2; echo ran-ok; sleep 0.05; done"],
         ))
         .await
         .unwrap();

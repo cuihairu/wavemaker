@@ -15,8 +15,8 @@
 use std::sync::Mutex;
 
 use tonic::{Request, Response, Status};
-use wm_core::backend::{BackendState, BackendStateMachine, StateMachineError};
-use wm_core::Generation;
+use wm_core::backend::{BackendState, BackendStateMachine, StateMachineError, TransitionRecord};
+use wm_core::{Generation, SwellId};
 use wm_protocol::backend::v1::backend_service_server::BackendService;
 use wm_protocol::backend::v1::{
     ApplyPlanRequest, ApplyPlanResponse, HandshakeRequest, HandshakeResponse, StartRequest,
@@ -108,6 +108,12 @@ impl NativeBackendService {
     pub fn snapshot(&self) -> (BackendState, Generation) {
         let core = self.core.lock().unwrap();
         (core.machine.state(), core.machine.generation())
+    }
+
+    /// Recorded state changes (for tests and diagnostics).
+    pub fn history(&self) -> Vec<TransitionRecord> {
+        let core = self.core.lock().unwrap();
+        core.machine.history().to_vec()
     }
 }
 
@@ -221,6 +227,10 @@ impl BackendService for NativeBackendService {
                 result: Some(result_ok(generation)),
             }));
         }
+
+        // Bind the swell before the plan transitions so the resulting records
+        // carry it (docs/backends.md "Every state change must include").
+        core.machine.bind_swell(SwellId(req.swell_id.clone()));
 
         // Ready -> Initialized -> PlanAccepted (docs/backends.md chain).
         for (to, reason) in [
@@ -415,5 +425,48 @@ mod tests {
         let r = result_ok(Generation(7));
         assert_eq!(r.code(), ErrorCode::Ok);
         assert_eq!(r.generation, 7);
+    }
+
+    /// Native Backend conformance (WM-0321): a plan application binds the
+    /// swell, so every state change from then on carries it (docs/backends.md).
+    #[tokio::test]
+    async fn apply_plan_binds_swell_and_records_it() {
+        let svc = NativeBackendService::new(vec!["native".into()]);
+        svc.handshake(Request::new(HandshakeRequest {
+            protocol_version: wm_protocol::PROTOCOL_VERSION,
+            backend_id: "backend-1".into(),
+            adapter_version: "0.1".into(),
+            engine_version: "native".into(),
+        }))
+        .await
+        .unwrap();
+
+        let resp = svc
+            .apply_plan(Request::new(ApplyPlanRequest {
+                swell_id: "swell-9".into(),
+                generation: 1,
+                plan_digest: "sha256:plan-a".into(),
+                plan_payload: vec![],
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(resp.result.unwrap().code(), ErrorCode::Ok);
+
+        let hist = svc.history();
+        // Handshake records predate the binding → empty swell.
+        assert!(hist
+            .iter()
+            .filter(|r| r.to == BackendState::Ready)
+            .all(|r| r.swell_id == SwellId(String::new())));
+        // Plan records postdate the binding → swell-9.
+        for rec in hist
+            .iter()
+            .filter(|r| r.to == BackendState::Initialized || r.to == BackendState::PlanAccepted)
+        {
+            assert_eq!(rec.swell_id, SwellId("swell-9".into()));
+        }
+        // The bound swell is visible on the machine.
+        assert_eq!(svc.snapshot().0, BackendState::PlanAccepted);
     }
 }

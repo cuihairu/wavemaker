@@ -4,15 +4,15 @@
 //! States"): a linear lifecycle Created → Handshaking → Ready → Initialized →
 //! PlanAccepted → Running → AdmissionStopped → Draining → Stopped, with
 //! Degraded / Failed reachable from any running state and recovery through
-//! Recovering → Handshaking. Every transition records backend_id, state,
-//! observed_at, reason_code, detail and generation (docs/backends.md
+//! Recovering → Handshaking. Every transition records backend_id, swell_id,
+//! state, observed_at, reason_code, detail and generation (docs/backends.md
 //! "Every state change must include").
 //!
 //! Generation guard (docs/supervisor.md §"A Backend after restart"): events
 //! stamped with an older generation never overwrite newer state; a restart
 //! bumps the generation and the machine re-enters via Handshaking.
 
-use crate::{BackendId, Generation};
+use crate::{BackendId, Generation, SwellId};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -47,6 +47,15 @@ impl BackendState {
                 | BackendState::Draining
         )
     }
+
+    /// True if the docs/backends.md transition table allows `self -> to`.
+    ///
+    /// Exposed so a conformance test can enumerate the whole table and pin it
+    /// against the documented contract (every documented edge allowed, no
+    /// undocumented edge accepted).
+    pub fn can_transition_to(self, to: BackendState) -> bool {
+        is_allowed(self, to)
+    }
 }
 
 /// One recorded state change with the observability fields required by
@@ -54,6 +63,10 @@ impl BackendState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransitionRecord {
     pub backend_id: BackendId,
+    /// Swell this backend serves; empty until [`BackendStateMachine::bind_swell`]
+    /// (a backend is bound to a swell at plan application). Required on every
+    /// state change (docs/backends.md "Every state change must include").
+    pub swell_id: SwellId,
     pub from: BackendState,
     pub to: BackendState,
     pub reason_code: String,
@@ -89,6 +102,7 @@ pub struct StateMachineOptions {
 #[derive(Debug)]
 pub struct BackendStateMachine {
     backend_id: BackendId,
+    swell_id: SwellId,
     state: BackendState,
     generation: Generation,
     started: Instant,
@@ -106,6 +120,7 @@ impl BackendStateMachine {
     pub fn with_options(backend_id: impl Into<BackendId>, options: StateMachineOptions) -> Self {
         Self {
             backend_id: backend_id.into(),
+            swell_id: SwellId(String::new()),
             state: BackendState::Created,
             generation: Generation::INITIAL,
             started: Instant::now(),
@@ -116,6 +131,22 @@ impl BackendStateMachine {
 
     pub fn backend_id(&self) -> &BackendId {
         &self.backend_id
+    }
+
+    /// The swell currently bound to this backend (empty until
+    /// [`BackendStateMachine::bind_swell`]).
+    pub fn swell_id(&self) -> &SwellId {
+        &self.swell_id
+    }
+
+    /// Bind this backend to a swell. Every subsequent state change records
+    /// the swell (docs/backends.md "Every state change must include").
+    ///
+    /// A backend serves exactly one swell; a swell assigned later than the
+    /// first overwrites the binding (the plan-dedup on the service layer
+    /// already refuses a conflicting plan for a bound swell).
+    pub fn bind_swell(&mut self, swell_id: impl Into<SwellId>) {
+        self.swell_id = swell_id.into();
     }
 
     pub fn state(&self) -> BackendState {
@@ -165,6 +196,7 @@ impl BackendStateMachine {
 
         let record = TransitionRecord {
             backend_id: self.backend_id.clone(),
+            swell_id: self.swell_id.clone(),
             from: self.state,
             to,
             reason_code: reason_code.into(),
@@ -433,6 +465,8 @@ mod tests {
             .transition(g, BackendState::Handshaking, "handshake_requested", "v1")
             .unwrap();
         assert_eq!(rec.backend_id, BackendId("backend-1".into()));
+        // Not yet bound to a swell: the field is present but empty.
+        assert_eq!(rec.swell_id, SwellId(String::new()));
         assert_eq!(rec.from, BackendState::Created);
         assert_eq!(rec.to, BackendState::Handshaking);
         assert_eq!(rec.reason_code, "handshake_requested");

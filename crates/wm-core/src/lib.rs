@@ -75,6 +75,18 @@ impl From<String> for BackendId {
     }
 }
 
+impl From<&str> for SwellId {
+    fn from(s: &str) -> Self {
+        SwellId(s.to_string())
+    }
+}
+
+impl From<String> for SwellId {
+    fn from(s: String) -> Self {
+        SwellId(s)
+    }
+}
+
 /// Swell lifecycle phase (plan §13.1, minimal subset for the control plane).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

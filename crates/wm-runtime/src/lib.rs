@@ -20,6 +20,7 @@ pub mod framing;
 pub mod histogram;
 pub mod lifecycle;
 pub mod metrics;
+pub mod omission;
 pub mod rng;
 pub mod scheduler;
 pub mod session;

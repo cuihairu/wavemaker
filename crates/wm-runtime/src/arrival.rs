@@ -121,7 +121,10 @@ impl ArrivalPlan {
         } else {
             let ramp = self.ramp_cumulative();
             if x <= ramp {
-                (1.0 + self.growth_k() * x / self.from_per_second).ln() / self.growth_k()
+                // ln(1+y) for tiny y rounds to 0 (1.0 + y == 1.0 in f64),
+                // collapsing the increment to no elapsed time; ln_1p keeps
+                // the inverse strictly monotone for arbitrarily small x.
+                (self.growth_k() * x / self.from_per_second).ln_1p() / self.growth_k()
             } else {
                 self.ramp_secs() + (x - ramp) / self.to_per_second
             }
@@ -176,6 +179,10 @@ impl ArrivalScheduler {
         let base = self.plan.cumulative(after_ns);
         let x = base + self.rng.next_exponential(1.0);
         let t = self.plan.inverse_cumulative(x);
+        // A sub-nanosecond increment can round down to `after_ns` itself
+        // (ceil of <1 ns is 0); clamp to a strict advance so arrivals are
+        // always strictly monotone and never duplicate a timestamp.
+        let t = t.max(after_ns.saturating_add(1));
         debug_assert!(t > after_ns, "Exp(1) draw must advance time");
         self.last_arrival_ns = Some(t);
         self.arrived += 1;
@@ -254,6 +261,31 @@ mod tests {
             );
         }
         assert_eq!(plan.inverse_cumulative(0.0), 0);
+    }
+
+    /// `1 + y` computed with plain `ln` rounds to `1.0` when `y < ~1e-16`,
+    /// mapping a tiny cumulative-intensity increment to zero elapsed time and
+    /// duplicating the previous arrival's timestamp. `ln_1p` keeps a positive
+    /// intensity inverting to a positive time, so the generator never emits a
+    /// zero-gap arrival (the `next_arrival_after` clamp enforces strict
+    /// monotonicity; below the 1 ns resolution the inverse is only weakly
+    /// monotone, which is the honest precision floor).
+    #[test]
+    fn inverse_cumulative_is_strictly_monotone_for_tiny_increments() {
+        let plan = spec_plan();
+        assert_eq!(plan.inverse_cumulative(0.0), 0);
+        // The ln(1+y) collapse: the smallest positive increments must still
+        // invert to a positive nanosecond (previously 0).
+        let x1 = plan.inverse_cumulative(1e-15);
+        let x2 = plan.inverse_cumulative(1e-12);
+        assert!(x1 > 0, "tiny increment must advance time, got {x1}");
+        assert!(x2 >= x1, "weakly monotone for sub-ns increments");
+        // At resolvable scales the inverse is strictly monotone.
+        let a = plan.inverse_cumulative(1e-6);
+        let b = plan.inverse_cumulative(2e-6);
+        let c = plan.inverse_cumulative(3e-6);
+        assert!(b > a, "strictly monotone, got {b} after {a}");
+        assert!(c > b, "strictly monotone, got {c} after {b}");
     }
 
     #[test]

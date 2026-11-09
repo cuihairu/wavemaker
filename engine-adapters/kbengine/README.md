@@ -82,3 +82,5 @@ cd engine-adapters/kbengine && python3 -m pytest tests -q
 
 Runtime conformance against a real KBEngine (callback latency, addBots
 pacing under load) is WM-0216 / RT1, blocked on a deployed engine cluster.
+A runnable end-to-end login load test sample on a real cluster is
+examples/login_load (WM-0217).

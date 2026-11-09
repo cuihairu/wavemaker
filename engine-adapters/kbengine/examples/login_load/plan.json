@@ -1,0 +1,9 @@
+{
+  "swell_id": "sw-login-sample",
+  "plan_digest": "sha256:login-sample",
+  "shard_id": "shard-sample",
+  "batches": [
+    {"offset_ms": 0, "bot_count": 3},
+    {"offset_ms": 2000, "bot_count": 3}
+  ]
+}

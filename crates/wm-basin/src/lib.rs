@@ -3,8 +3,8 @@
 //!
 //! Basin represents the environment, its service topology, and its
 //! observability setup. It is deliberately NOT a monitoring product: no
-//! metric storage, no Prometheus re-implementation. The sub-models land in
-//! their own roadmap items (topology WM-0402, catalog WM-0403, providers
+//! metric storage, no Prometheus re-implementation. The remaining
+//! sub-models land in their own roadmap items (catalog WM-0403, providers
 //! WM-0404, mapping WM-0405, scheduler WM-0406, timestamps WM-0407,
 //! quality WM-0408); this crate owns the root model that ties them
 //! together and the parts no later item claims.
@@ -39,7 +39,7 @@ pub struct Basin {
     /// The environment under test (docs/basin.md); the configuration's
     /// `basin.ref` names it.
     pub environment: Environment,
-    /// The service topology of that environment (model: WM-0402).
+    /// The service topology of that environment (WM-0402).
     pub topology: Topology,
     /// The observability configuration (providers, catalog, mapping,
     /// scheduling land in WM-0403+; the policy that decides whether a

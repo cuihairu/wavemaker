@@ -1283,6 +1283,12 @@ def test_heartbeat_keeps_the_session_visibly_alive():
                                         "fd_count"}
         assert beat["process"]["rss_bytes"] is None or \
             beat["process"]["rss_bytes"] > 0
+        # WM-0215: bridge queue depth + callback lag ride the beat too.
+        assert set(beat["metrics"]) == {"queue_depth", "queue_dropped",
+                                        "callback_lag_ms",
+                                        "callback_lag_max_ms"}
+        assert beat["metrics"]["queue_depth"] == 0, \
+            "the tick drained the queue before the heartbeat"
 
         for _ in range(Bootstrap.HEARTBEAT_TICKS):
             engine.fire(b.pump_id)

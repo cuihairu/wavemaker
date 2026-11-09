@@ -48,6 +48,7 @@ from .event_stream import EventStream
 from .handshake import build_handshake, parse_handshake_ack
 from .ipc_client import DEFAULT_OUTBOUND_LIMIT, IpcClient, OutboundQueue
 from .lifecycle import BackendLifecycle
+from .metrics import CallbackLagMeter
 from .plans import PlanState
 from .process_metrics import collect_process_metrics
 
@@ -136,6 +137,9 @@ class Bootstrap(object):
         self._reconnect_max_s = reconnect_max_s
         self._heartbeat_seq = 0
         self._ticks = 0
+        # WM-0215: callback lag of the pump against its armed due instant
+        # (the engine may fire late; the excess is reported, not absorbed).
+        self._lag = CallbackLagMeter(self.PUMP_INTERVAL_S)
         self._dispatcher = CommandDispatcher(
             self._send_command_result, lambda: self._handshake_generation
         )
@@ -311,6 +315,7 @@ class Bootstrap(object):
         self._pump_id = self._engine.schedule(
             self.PUMP_INTERVAL_S, functools.partial(self._on_pump)
         )
+        self._lag.armed()
 
     def _pump_session_upkeep(self):
         """Send a pending handshake when the transport is up (WM-0212).
@@ -339,8 +344,19 @@ class Bootstrap(object):
             "bridge_state": self._state,
             "ipc": self.ipc_stats(),
             "process": collect_process_metrics(),
+            "metrics": self.bridge_metrics(),
             "monotonic": time.monotonic(),
         })
+
+    def bridge_metrics(self):
+        """Bridge-level metrics (WM-0215, docs/bridge.md §Metrics Model):
+        inbound command queue depth/dropped plus callback lag (the outbound
+        depth/dropped already ride the `ipc` transport stats). Each call
+        closes the callback-lag max window."""
+        metrics = self._lag.snapshot_ms()
+        metrics["queue_depth"] = self._queue.pending()
+        metrics["queue_dropped"] = self._queue.overflow_count()
+        return metrics
 
     def _teardown_session(self):
         """Inline session teardown (synchronous, bounded): close the IPC
@@ -362,6 +378,9 @@ class Bootstrap(object):
             self._teardown_session()
             return
         try:
+            # WM-0215: how late this fire was against the armed due instant
+            # (D4 quantization shows up here instead of being absorbed).
+            self._lag.fired()
             self.drain_command_queue()
             # Batch plan execution rides the same pump tick: due batches
             # become one addBots call each, on the scripting thread (S1).

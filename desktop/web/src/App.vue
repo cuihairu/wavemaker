@@ -6,6 +6,10 @@
   <div class="app">
     <header>
       <span class="brand">Wavemaker</span>
+      <nav>
+        <RouterLink to="/">Swells</RouterLink>
+        <RouterLink to="/status">Status</RouterLink>
+      </nav>
     </header>
     <RouterView />
   </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveSwells, formatStates } from '../api.js'
+import { deriveSwells, formatStates, deriveWorkerRows } from '../api.js'
 
 const run = (overrides = {}) => ({
   run_id: 'r1',
@@ -44,5 +44,43 @@ describe('formatStates', () => {
   it('renders counted states deterministically', () => {
     expect(formatStates({ Created: 1, Stopped: 1 })).toBe('Created: 1, Stopped: 1')
     expect(formatStates({})).toBe('')
+  })
+})
+
+describe('deriveWorkerRows', () => {
+  const worker = (worker_id, overrides = {}) => ({
+    worker_id,
+    generation: 1,
+    capabilities: ['native'],
+    adapter_version: '0.1',
+    runtime_version: '0.1',
+    seconds_since_heartbeat: 0,
+    ...overrides,
+  })
+
+  it('returns [] when no workers are registered', () => {
+    expect(deriveWorkerRows({ workers: [], expired_workers: [] })).toEqual([])
+    expect(deriveWorkerRows({})).toEqual([])
+  })
+
+  it('flags expiry from the controller verdict and keeps payload verbatim', () => {
+    const rows = deriveWorkerRows({
+      workers: [worker('w-a'), worker('w-b', { seconds_since_heartbeat: 9 })],
+      expired_workers: ['w-b'],
+    })
+    expect(rows).toHaveLength(2)
+    expect(rows[0].worker_id).toBe('w-a')
+    expect(rows[0].expired).toBe(false)
+    expect(rows[1].worker_id).toBe('w-b')
+    expect(rows[1].expired).toBe(true)
+    expect(rows[1].seconds_since_heartbeat).toBe(9)
+  })
+
+  it('sorts rows by worker_id for a stable table', () => {
+    const rows = deriveWorkerRows({
+      workers: [worker('w-c'), worker('w-a'), worker('w-b')],
+      expired_workers: [],
+    })
+    expect(rows.map((r) => r.worker_id)).toEqual(['w-a', 'w-b', 'w-c'])
   })
 })

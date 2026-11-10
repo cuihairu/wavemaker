@@ -2,3 +2,5 @@
 # the Vite/Vitest binaries; without this pnpm refuses to run it.
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@tauri-apps/plugin-http@2.9.0'

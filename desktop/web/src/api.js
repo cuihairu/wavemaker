@@ -59,3 +59,14 @@ export function formatStates(states) {
     .map(([state, count]) => `${state}: ${count}`)
     .join(', ')
 }
+
+/// Worker rows for the status page (WM-0602). Each worker keeps its
+/// controller payload verbatim plus one derived flag: `expired` mirrors
+/// the controller's own `expired_workers` verdict — the UI never guesses
+/// heartbeat thresholds. Ordered by worker_id for a stable table.
+export function deriveWorkerRows(status) {
+  const expired = new Set(status.expired_workers || [])
+  return (status.workers || [])
+    .map((worker) => ({ ...worker, expired: expired.has(worker.worker_id) }))
+    .sort((a, b) => a.worker_id.localeCompare(b.worker_id))
+}

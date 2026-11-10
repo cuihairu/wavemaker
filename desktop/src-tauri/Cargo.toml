@@ -12,6 +12,12 @@ license = "Apache-2.0"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Production builds embed the bundled frontend only with this feature
+# (`tauri build` passes it; plain cargo builds stay in dev mode and load
+# the devUrl dev server).
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 # The webview calls the controller REST API through this plugin, so the

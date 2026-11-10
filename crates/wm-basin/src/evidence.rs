@@ -40,7 +40,8 @@ fn checked_component(component: &str) -> Result<&str, EvidenceError> {
     if component.trim().is_empty() {
         return Err(EvidenceError::EmptyComponent(component.into()));
     }
-    if component.contains('/') || component.contains('\\') || component == ".." || component == "." {
+    if component.contains('/') || component.contains('\\') || component == ".." || component == "."
+    {
         return Err(EvidenceError::UnsafeComponent(component.into()));
     }
     Ok(component)
@@ -91,18 +92,10 @@ impl EvidenceArchive {
     /// the assertion instance is registered. Idempotent for repeat
     /// registrations of the same instance. The returned path (relative
     /// to the swell dir) is what rides in the window context.
-    pub fn prepare(
-        &self,
-        assertion_name: &str,
-        timestamp: &str,
-    ) -> Result<String, EvidenceError> {
+    pub fn prepare(&self, assertion_name: &str, timestamp: &str) -> Result<String, EvidenceError> {
         let name = checked_component(assertion_name)?;
         let stamp = checked_component(timestamp)?;
-        let dir = self
-            .swell_dir
-            .join("evidence")
-            .join(name)
-            .join(stamp);
+        let dir = self.swell_dir.join("evidence").join(name).join(stamp);
         fs::create_dir_all(&dir).map_err(|err| {
             EvidenceError::CreateFailed(dir.display().to_string(), err.to_string())
         })?;
@@ -167,14 +160,9 @@ fn relative_evidence_path(name: &str, stamp: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assertions::{
-        AssertionStatus, EvidenceKind, EvidenceRef, RecordWindow, Trigger,
-    };
+    use crate::assertions::{AssertionStatus, EvidenceKind, EvidenceRef, RecordWindow, Trigger};
 
-    fn record_with_evidence(
-        name: &str,
-        evidence: Vec<EvidenceRef>,
-    ) -> AssertionRecord {
+    fn record_with_evidence(name: &str, evidence: Vec<EvidenceRef>) -> AssertionRecord {
         AssertionRecord {
             provider: "game-admin-api".into(),
             name: name.into(),
@@ -241,9 +229,8 @@ mod tests {
                 vec![
                     EvidenceRef {
                         kind: EvidenceKind::Artifact,
-                        reference:
-                            "evidence/no-duplicate-roles/20261110T000000Z/roles-diff.json"
-                                .into(),
+                        reference: "evidence/no-duplicate-roles/20261110T000000Z/roles-diff.json"
+                            .into(),
                     },
                     EvidenceRef {
                         kind: EvidenceKind::Query,
@@ -255,9 +242,8 @@ mod tests {
                 "reward-consistency",
                 vec![EvidenceRef {
                     kind: EvidenceKind::Artifact,
-                    reference:
-                        "evidence/reward-consistency/20261110T000100Z/settlement.json"
-                            .into(),
+                    reference: "evidence/reward-consistency/20261110T000100Z/settlement.json"
+                        .into(),
                 }],
             ),
             // A query-only record contributes nothing to §14.
@@ -274,15 +260,11 @@ mod tests {
             references,
             vec![
                 RawDataReference {
-                    path:
-                        "evidence/no-duplicate-roles/20261110T000000Z/roles-diff.json"
-                            .into(),
+                    path: "evidence/no-duplicate-roles/20261110T000000Z/roles-diff.json".into(),
                     format: "evidence-bundle".into(),
                 },
                 RawDataReference {
-                    path:
-                        "evidence/reward-consistency/20261110T000100Z/settlement.json"
-                            .into(),
+                    path: "evidence/reward-consistency/20261110T000100Z/settlement.json".into(),
                     format: "evidence-bundle".into(),
                 },
             ]
@@ -293,7 +275,9 @@ mod tests {
     fn archive_status_lists_entries_without_reading_contents() {
         let swell = tempfile::tempdir().expect("tempdir");
         let archive = EvidenceArchive::new(swell.path());
-        let dir = archive.prepare("no-duplicate-roles", "20261110T000000Z").expect("prepare");
+        let dir = archive
+            .prepare("no-duplicate-roles", "20261110T000000Z")
+            .expect("prepare");
         let full = swell.path().join(&dir);
         // Raw evidence is arbitrary bytes; the archive never opens it.
         std::fs::write(full.join("roles-diff.json"), [0u8, 159, 146, 150]).expect("write");
@@ -325,9 +309,6 @@ mod tests {
         std::fs::write(swell.path().join("evidence"), b"occupied").expect("write");
         let archive = EvidenceArchive::new(swell.path());
         let prepared = archive.prepare("no-duplicate-roles", "20261110T000000Z");
-        assert!(matches!(
-            prepared,
-            Err(EvidenceError::CreateFailed(_, _))
-        ));
+        assert!(matches!(prepared, Err(EvidenceError::CreateFailed(_, _))));
     }
 }

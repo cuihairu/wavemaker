@@ -18,10 +18,14 @@ use crate::topology::Topology;
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum CheckOutcome {
     Passed,
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
     /// The check cannot answer from the available evidence — carried
     /// honestly instead of guessing a pass/fail.
-    NotDeterminable { reason: String },
+    NotDeterminable {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,13 +37,18 @@ pub struct PreflightCheck {
 
 impl PreflightCheck {
     fn passed(name: &str) -> Self {
-        Self { name: name.into(), outcome: CheckOutcome::Passed }
+        Self {
+            name: name.into(),
+            outcome: CheckOutcome::Passed,
+        }
     }
 
     fn failed(name: &str, reason: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            outcome: CheckOutcome::Failed { reason: reason.into() },
+            outcome: CheckOutcome::Failed {
+                reason: reason.into(),
+            },
         }
     }
 }
@@ -53,17 +62,15 @@ impl PreflightReport {
     /// True only when every check passed; a NotDeterminable counts as
     /// not-all-passed.
     pub fn all_passed(&self) -> bool {
-        self.checks.iter().all(|check| {
-            matches!(check.outcome, CheckOutcome::Passed)
-        })
+        self.checks
+            .iter()
+            .all(|check| matches!(check.outcome, CheckOutcome::Passed))
     }
 
     pub fn failures(&self) -> Vec<&PreflightCheck> {
         self.checks
             .iter()
-            .filter(|check| {
-                matches!(check.outcome, CheckOutcome::Failed { .. })
-            })
+            .filter(|check| matches!(check.outcome, CheckOutcome::Failed { .. }))
             .collect()
     }
 
@@ -86,18 +93,13 @@ pub enum PreflightDecision {
     Abort,
 }
 
-pub fn decision_for(
-    report: &PreflightReport,
-    policy: &UnavailablePolicy,
-) -> PreflightDecision {
+pub fn decision_for(report: &PreflightReport, policy: &UnavailablePolicy) -> PreflightDecision {
     if report.all_passed() {
         return PreflightDecision::Proceed;
     }
     match policy {
         UnavailablePolicy::Abort => PreflightDecision::Abort,
-        UnavailablePolicy::MarkPartial => {
-            PreflightDecision::ProceedPartialObservability
-        }
+        UnavailablePolicy::MarkPartial => PreflightDecision::ProceedPartialObservability,
     }
 }
 
@@ -124,9 +126,7 @@ impl<'a> Preflight<'a> {
         // "Providers are reachable."
         checks.push(match self.provider.ready() {
             Ok(()) => PreflightCheck::passed("providers_reachable"),
-            Err(err) => {
-                PreflightCheck::failed("providers_reachable", err.to_string())
-            }
+            Err(err) => PreflightCheck::failed("providers_reachable", err.to_string()),
         });
 
         // "Required metrics exist." (mapping references resolve in the
@@ -134,10 +134,7 @@ impl<'a> Preflight<'a> {
         let mut metric_gaps = Vec::new();
         for entry in self.mapping.entries() {
             if self.catalog.lookup(&entry.catalog_metric).is_none() {
-                metric_gaps.push(format!(
-                    "{} ({})",
-                    entry.catalog_metric, entry.service
-                ));
+                metric_gaps.push(format!("{} ({})", entry.catalog_metric, entry.service));
             }
         }
         checks.push(if metric_gaps.is_empty() {
@@ -163,7 +160,10 @@ impl<'a> Preflight<'a> {
         } else {
             PreflightCheck::failed(
                 "topology_fully_covered",
-                format!("services without any metric mapping: {}", uncovered.join(", ")),
+                format!(
+                    "services without any metric mapping: {}",
+                    uncovered.join(", ")
+                ),
             )
         });
 
@@ -194,16 +194,13 @@ impl<'a> Preflight<'a> {
         // One probe feeds three checks: "Query windows are available",
         // "Monitoring data source permissions are sufficient", and the
         // "high-cardinality label risks" observation.
-        let probe = self
-            .mapping
-            .entries()
-            .first()
-            .map(|entry| {
-                (
-                    entry.provider_query.clone(),
-                    self.provider.query_range(&entry.provider_query, probe_window),
-                )
-            });
+        let probe = self.mapping.entries().first().map(|entry| {
+            (
+                entry.provider_query.clone(),
+                self.provider
+                    .query_range(&entry.provider_query, probe_window),
+            )
+        });
         match probe {
             None => {
                 for name in [
@@ -228,10 +225,7 @@ impl<'a> Preflight<'a> {
                     "query_window_available",
                     reason.clone(),
                 ));
-                checks.push(PreflightCheck::failed(
-                    "data_source_permissions",
-                    reason,
-                ));
+                checks.push(PreflightCheck::failed("data_source_permissions", reason));
                 checks.push(PreflightCheck {
                     name: "no_high_cardinality_surprise".into(),
                     outcome: CheckOutcome::NotDeterminable {
@@ -264,9 +258,9 @@ impl<'a> Preflight<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::ProviderError;
     use crate::catalog::{Category, MetricDef, MetricKind, Unit};
     use crate::mapping::MappingEntry;
+    use crate::provider::ProviderError;
     use crate::provider::ProviderSeries;
     use crate::Labels;
 
@@ -320,8 +314,16 @@ mod tests {
     fn full_mapping() -> MetricMapping {
         let mut mapping = MetricMapping::default();
         for (metric, service, query) in [
-            ("login.online", "loginapp", "kbengine_online{component=\"loginapp\"}"),
-            ("game.online", "cellapp", "kbengine_online{component=\"cellapp\"}"),
+            (
+                "login.online",
+                "loginapp",
+                "kbengine_online{component=\"loginapp\"}",
+            ),
+            (
+                "game.online",
+                "cellapp",
+                "kbengine_online{component=\"cellapp\"}",
+            ),
         ] {
             mapping
                 .add_entry(MappingEntry {
@@ -436,8 +438,7 @@ mod tests {
         let mapping = full_mapping();
         let obs = observability(UnavailablePolicy::Abort);
         let provider = HealthyProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
         assert!(report.all_passed(), "failures: {:?}", report.failures());
         assert_eq!(report.checks.len(), 8);
         for name in [
@@ -450,10 +451,7 @@ mod tests {
             "data_source_permissions",
             "no_high_cardinality_surprise",
         ] {
-            assert!(
-                report.check(name).is_some(),
-                "missing check {name}"
-            );
+            assert!(report.check(name).is_some(), "missing check {name}");
         }
         assert_eq!(
             decision_for(&report, &obs.on_unavailable),
@@ -468,11 +466,13 @@ mod tests {
         let mapping = full_mapping();
         let obs = observability(UnavailablePolicy::Abort);
         let provider = UnreadyProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
         assert!(!report.all_passed());
-        let failed_names: Vec<&str> =
-            report.failures().iter().map(|check| check.name.as_str()).collect();
+        let failed_names: Vec<&str> = report
+            .failures()
+            .iter()
+            .map(|check| check.name.as_str())
+            .collect();
         assert!(failed_names.contains(&"providers_reachable"));
         assert!(failed_names.contains(&"query_window_available"));
         assert_eq!(
@@ -510,10 +510,12 @@ mod tests {
             .expect("entry");
         let obs = observability(UnavailablePolicy::Abort);
         let provider = HealthyProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
-        let failed: Vec<&str> =
-            report.failures().iter().map(|check| check.name.as_str()).collect();
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
+        let failed: Vec<&str> = report
+            .failures()
+            .iter()
+            .map(|check| check.name.as_str())
+            .collect();
         assert!(failed.contains(&"required_metrics_exist"));
         assert!(failed.contains(&"topology_fully_covered"));
         let coverage = report
@@ -535,8 +537,7 @@ mod tests {
         let mut obs = observability(UnavailablePolicy::Abort);
         obs.collection_interval_ms = 10_000; // bound is 5000
         let provider = HealthyProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
         let check = report
             .check("sampling_interval_satisfies_report")
             .expect("interval check");
@@ -555,8 +556,7 @@ mod tests {
         let mapping = full_mapping();
         let obs = observability(UnavailablePolicy::Abort);
         let provider = ForbiddenProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
         let check = report
             .check("data_source_permissions")
             .expect("permissions check");
@@ -584,10 +584,12 @@ mod tests {
                 _query: &str,
                 _window: &QueryWindow,
             ) -> Result<Vec<ProviderSeries>, ProviderError> {
-                Ok((0..5).map(|_| ProviderSeries {
-                    metric: Labels::new(),
-                    samples: vec![],
-                }).collect())
+                Ok((0..5)
+                    .map(|_| ProviderSeries {
+                        metric: Labels::new(),
+                        samples: vec![],
+                    })
+                    .collect())
             }
 
             fn ready(&self) -> Result<(), ProviderError> {
@@ -621,8 +623,7 @@ mod tests {
         let mapping = MetricMapping::default();
         let obs = observability(UnavailablePolicy::Abort);
         let provider = HealthyProvider;
-        let report = preflight(&provider, &catalog, &topology, &mapping, &obs)
-            .run(&probe_window());
+        let report = preflight(&provider, &catalog, &topology, &mapping, &obs).run(&probe_window());
         for name in [
             "query_window_available",
             "data_source_permissions",

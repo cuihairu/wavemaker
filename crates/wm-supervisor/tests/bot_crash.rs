@@ -26,10 +26,7 @@ fn harness_path() -> PathBuf {
 
 /// Read frames until one is complete; socket EOF (Ok(0) on read) surfaces
 /// as Err — exactly the signal the Supervisor reacts to.
-fn read_first_frame(
-    stream: &mut UnixStream,
-    decoder: &mut LengthPrefixed,
-) -> Result<Vec<u8>, ()> {
+fn read_first_frame(stream: &mut UnixStream, decoder: &mut LengthPrefixed) -> Result<Vec<u8>, ()> {
     let mut buf = [0u8; 8192];
     loop {
         let n = stream.read(&mut buf).map_err(|_| ())?;

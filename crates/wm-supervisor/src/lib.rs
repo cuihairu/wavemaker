@@ -474,7 +474,10 @@ mod tests {
         // under full-workspace parallelism and flaked the gate.
         sup.start(&ProcessSpec::new(
             "/bin/sh",
-            &["-c", "while :; do echo boom >&2; echo ran-ok; sleep 0.05; done"],
+            &[
+                "-c",
+                "while :; do echo boom >&2; echo ran-ok; sleep 0.05; done",
+            ],
         ))
         .await
         .unwrap();
@@ -537,7 +540,10 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn terminate_escalates_to_kill_when_child_ignores_sigterm() {
-        let spec = ProcessSpec::new("/bin/sh", &["-c", "trap '' TERM; while :; do sleep 1; done"]);
+        let spec = ProcessSpec::new(
+            "/bin/sh",
+            &["-c", "trap '' TERM; while :; do sleep 1; done"],
+        );
         let mut sup = NativeProcessLauncher::new();
         sup.start(&spec).await.unwrap();
         // Let the child reach its signal-handling state: a SIGTERM racing

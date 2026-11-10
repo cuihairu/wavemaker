@@ -175,7 +175,12 @@ mod tests {
 
     #[test]
     fn silence_after_produces_beats_then_silence() {
-        let mut worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 3, WorkerFault::SilenceAfter { beats: 2 });
+        let mut worker = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            3,
+            WorkerFault::SilenceAfter { beats: 2 },
+        );
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 3 });
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 3 });
         assert_eq!(worker.next_beat(), BeatAction::Silent);
@@ -184,27 +189,51 @@ mod tests {
 
     #[test]
     fn stale_generation_beats_one_behind_after_trigger() {
-        let mut worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 3, WorkerFault::StaleGenerationAfter { beats: 1 });
+        let mut worker = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            3,
+            WorkerFault::StaleGenerationAfter { beats: 1 },
+        );
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 3 });
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 2 });
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 2 });
         // A worker at generation 0 has nothing stale to send — the
         // model saturates rather than underflowing.
-        let mut zero = FaultyWorker::new("w2", PROTOCOL_VERSION, 0, WorkerFault::StaleGenerationAfter { beats: 0 });
+        let mut zero = FaultyWorker::new(
+            "w2",
+            PROTOCOL_VERSION,
+            0,
+            WorkerFault::StaleGenerationAfter { beats: 0 },
+        );
         assert_eq!(zero.next_beat(), BeatAction::Heartbeat { generation: 0 });
     }
 
     #[test]
     fn deregister_after_leaves_once_then_falls_silent() {
-        let mut worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 1, WorkerFault::DeregisterAfter { beats: 1 });
+        let mut worker = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            1,
+            WorkerFault::DeregisterAfter { beats: 1 },
+        );
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 1 });
         assert_eq!(worker.next_beat(), BeatAction::Leave);
-        assert_eq!(worker.next_beat(), BeatAction::Silent, "a departed worker is gone");
+        assert_eq!(
+            worker.next_beat(),
+            BeatAction::Silent,
+            "a departed worker is gone"
+        );
     }
 
     #[test]
     fn restart_after_rejoins_once_then_resumes_at_the_new_generation() {
-        let mut worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 1, WorkerFault::RestartAfter { beats: 1 });
+        let mut worker = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            1,
+            WorkerFault::RestartAfter { beats: 1 },
+        );
         assert_eq!(worker.next_beat(), BeatAction::Heartbeat { generation: 1 });
         assert_eq!(worker.next_beat(), BeatAction::Rejoin);
         // The harness re-registers and grants a fresh generation.
@@ -218,15 +247,30 @@ mod tests {
         let worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 0, WorkerFault::ProtocolMismatch);
         assert!(worker.is_protocol_mismatch());
         assert_eq!(worker.register_protocol_version(), PROTOCOL_VERSION + 7);
-        let healthy = FaultyWorker::new("w2", PROTOCOL_VERSION, 0, WorkerFault::SilenceAfter { beats: 0 });
+        let healthy = FaultyWorker::new(
+            "w2",
+            PROTOCOL_VERSION,
+            0,
+            WorkerFault::SilenceAfter { beats: 0 },
+        );
         assert!(!healthy.is_protocol_mismatch());
         assert_eq!(healthy.register_protocol_version(), PROTOCOL_VERSION);
     }
 
     #[test]
     fn action_stream_is_deterministic() {
-        let mut a = FaultyWorker::new("w1", PROTOCOL_VERSION, 1, WorkerFault::SilenceAfter { beats: 2 });
-        let mut b = FaultyWorker::new("w1", PROTOCOL_VERSION, 1, WorkerFault::SilenceAfter { beats: 2 });
+        let mut a = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            1,
+            WorkerFault::SilenceAfter { beats: 2 },
+        );
+        let mut b = FaultyWorker::new(
+            "w1",
+            PROTOCOL_VERSION,
+            1,
+            WorkerFault::SilenceAfter { beats: 2 },
+        );
         for _ in 0..6 {
             assert_eq!(a.next_beat(), b.next_beat(), "same fault, same stream");
         }

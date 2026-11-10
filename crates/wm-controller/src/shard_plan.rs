@@ -176,7 +176,11 @@ fn allocate_shards(backends: &[PlanBackend], total: u32) -> Result<Vec<u32>, Pla
                 (backend.backend_id.clone(), 0, 0.0)
             } else {
                 let quota = total_f * backend.weight / total_weight;
-                (backend.backend_id.clone(), quota.floor() as u32, quota.fract())
+                (
+                    backend.backend_id.clone(),
+                    quota.floor() as u32,
+                    quota.fract(),
+                )
             }
         })
         .collect();
@@ -226,7 +230,10 @@ pub fn build_shard_plan(
     if backends.is_empty() {
         return Err(PlanError::NoBackends);
     }
-    let mut ids: Vec<&str> = backends.iter().map(|backend| backend.backend_id.as_str()).collect();
+    let mut ids: Vec<&str> = backends
+        .iter()
+        .map(|backend| backend.backend_id.as_str())
+        .collect();
     ids.sort_unstable();
     if ids.windows(2).any(|pair| pair[0] == pair[1]) {
         return Err(PlanError::DuplicateBackend);
@@ -399,11 +406,12 @@ mod tests {
 
     #[test]
     fn identical_inputs_produce_byte_identical_plans() {
-        let first = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(10))
-            .expect("plan");
-        let second = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(10))
-            .expect("plan");
-        assert_eq!(first, second, "D4-1 plan determinism: same input, same plan");
+        let first = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(10)).expect("plan");
+        let second = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(10)).expect("plan");
+        assert_eq!(
+            first, second,
+            "D4-1 plan determinism: same input, same plan"
+        );
         let text = serde_json::to_string(&first).expect("serialize");
         let round: ShardPlan = serde_json::from_str(&text).expect("deserialize");
         assert_eq!(round, first);
@@ -412,8 +420,7 @@ mod tests {
 
     #[test]
     fn entries_carry_the_full_d2_field_set() {
-        let plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(3))
-            .expect("plan");
+        let plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(3)).expect("plan");
         let entry = &plan.entries[0];
         assert!(!entry.actor_or_bot_id.is_empty());
         assert!(!entry.backend_id.is_empty());
@@ -427,8 +434,7 @@ mod tests {
         let seeds: Vec<u64> = plan.entries.iter().map(|entry| entry.seed).collect();
         assert_eq!(seeds.len(), 3);
         assert!(seeds.windows(2).all(|pair| pair[0] != pair[1]));
-        let other = build_shard_plan("sw-2", 4, &two_backends(), &arrivals(3))
-            .expect("plan");
+        let other = build_shard_plan("sw-2", 4, &two_backends(), &arrivals(3)).expect("plan");
         assert_ne!(
             plan.entries[0].seed, other.entries[0].seed,
             "seeds are swell-scoped, not global constants"
@@ -439,8 +445,7 @@ mod tests {
     fn modulo_rule_and_proportional_allocation_are_deterministic() {
         // Weights 2:1 over W=6 → a-bot 4 shards, b-native 2 shards
         // (largest-remainder with ties by sorted backend id).
-        let plan = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(12))
-            .expect("plan");
+        let plan = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(12)).expect("plan");
         assert_eq!(plan.rule, ShardRule::Modulo);
         assert_eq!(plan.worker_count, 6);
         for (index, entry) in plan.entries.iter().enumerate() {
@@ -500,8 +505,7 @@ mod tests {
 
     #[test]
     fn tampered_entries_fail_digest_verification() {
-        let mut plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(4))
-            .expect("plan");
+        let mut plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(4)).expect("plan");
         assert!(plan.verify_digest());
         plan.entries[0].planned_at_unix_ms += 1;
         assert!(!plan.verify_digest(), "edited plan data must not verify");
@@ -535,8 +539,7 @@ mod tests {
 
     #[test]
     fn replan_moves_only_lost_entries_and_keeps_everything_else() {
-        let plan = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(12))
-            .expect("plan");
+        let plan = build_shard_plan("sw-1", 6, &two_backends(), &arrivals(12)).expect("plan");
         let survivor = vec![native("b-native", 1.0)];
         let (replanned, record) = plan.replan_on_loss(&survivor).expect("replan");
         // W, rule, shard ids, ids, seeds, arrival times all unchanged.
@@ -568,7 +571,10 @@ mod tests {
                 assert!(moved_ids.contains(&entry.actor_or_bot_id.as_str()));
             }
         }
-        assert!(record.moved.iter().all(|moved| moved.to_backend == "b-native"));
+        assert!(record
+            .moved
+            .iter()
+            .all(|moved| moved.to_backend == "b-native"));
         // Digest changed and verifies; ids stay unique (dedup).
         assert_ne!(record.previous_digest, record.new_digest);
         assert_eq!(record.previous_digest, plan.plan_digest);
@@ -586,8 +592,7 @@ mod tests {
 
     #[test]
     fn replan_without_loss_is_an_honest_no_op() {
-        let plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(8))
-            .expect("plan");
+        let plan = build_shard_plan("sw-1", 4, &two_backends(), &arrivals(8)).expect("plan");
         let (replanned, record) = plan.replan_on_loss(&two_backends()).expect("replan");
         assert_eq!(replanned, plan, "nothing lost, nothing moved");
         assert!(record.moved.is_empty());

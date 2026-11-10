@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::mapping::{MappingEntry, MetricMapping};
-use crate::provider::{MetricProvider, ProviderError, QueryWindow, ProviderSeries};
+use crate::provider::{MetricProvider, ProviderError, ProviderSeries, QueryWindow};
 
 /// One planned query: a mapping entry paired with the window it will be
 /// asked for.
@@ -111,11 +111,10 @@ impl QueryScheduler {
             .into_iter()
             .map(|scheduled| {
                 let entry = &self.mapping.entries()[scheduled.entry_index];
-                let outcome =
-                    match provider.query_range(&entry.provider_query, &scheduled.window) {
-                        Ok(series) => CollectedOutcome::Series(series),
-                        Err(err) => CollectedOutcome::Failed(err.to_string()),
-                    };
+                let outcome = match provider.query_range(&entry.provider_query, &scheduled.window) {
+                    Ok(series) => CollectedOutcome::Series(series),
+                    Err(err) => CollectedOutcome::Failed(err.to_string()),
+                };
                 CollectedQuery {
                     entry_index: scheduled.entry_index,
                     catalog_metric: entry.catalog_metric.clone(),
@@ -148,10 +147,7 @@ pub fn scheduler_from_interval(
 }
 
 /// Re-export for callers that want the entry behind a collected record.
-pub fn entry_of<'a>(
-    mapping: &'a MetricMapping,
-    collected: &CollectedQuery,
-) -> &'a MappingEntry {
+pub fn entry_of<'a>(mapping: &'a MetricMapping, collected: &CollectedQuery) -> &'a MappingEntry {
     &mapping.entries()[collected.entry_index]
 }
 
@@ -223,24 +219,29 @@ mod tests {
 
     #[test]
     fn plan_is_deterministic_and_truncates_the_last_window() {
-        let scheduler =
-            QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
+        let scheduler = QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
         let plan = scheduler.plan(0, 10_000);
         // 3 ticks (0, 4, 8) x 2 entries; tick windows [0,4),[4,8),[8,10).
         assert_eq!(plan.len(), 6);
         assert_eq!(plan[0].entry_index, 0);
-        assert_eq!(plan[0].window, QueryWindow {
-            start_unix_ms: 0,
-            end_unix_ms: 4000,
-            step_ms: 4000,
-        });
+        assert_eq!(
+            plan[0].window,
+            QueryWindow {
+                start_unix_ms: 0,
+                end_unix_ms: 4000,
+                step_ms: 4000,
+            }
+        );
         assert_eq!(plan[1].entry_index, 1);
         let last = plan.last().expect("non-empty");
-        assert_eq!(last.window, QueryWindow {
-            start_unix_ms: 8000,
-            end_unix_ms: 10_000,
-            step_ms: 4000,
-        });
+        assert_eq!(
+            last.window,
+            QueryWindow {
+                start_unix_ms: 8000,
+                end_unix_ms: 10_000,
+                step_ms: 4000,
+            }
+        );
 
         // Same inputs, same plan.
         assert_eq!(plan, scheduler.plan(0, 10_000));
@@ -248,12 +249,10 @@ mod tests {
 
     #[test]
     fn degenerate_ranges_and_empty_mappings_plan_nothing() {
-        let scheduler =
-            QueryScheduler::new(mapping_two_entries(), 1000).expect("scheduler");
+        let scheduler = QueryScheduler::new(mapping_two_entries(), 1000).expect("scheduler");
         assert!(scheduler.plan(5000, 5000).is_empty());
         assert!(scheduler.plan(6000, 5000).is_empty());
-        let empty =
-            QueryScheduler::new(MetricMapping::default(), 1000).expect("scheduler");
+        let empty = QueryScheduler::new(MetricMapping::default(), 1000).expect("scheduler");
         assert!(empty.plan(0, 10_000).is_empty());
     }
 
@@ -271,10 +270,8 @@ mod tests {
 
     #[test]
     fn collection_records_window_issue_instant_and_outcome() {
-        let scheduler =
-            QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
-        let collected =
-            scheduler.collect(&SplitProvider, 0, 8000, 9_999);
+        let scheduler = QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
+        let collected = scheduler.collect(&SplitProvider, 0, 8000, 9_999);
         assert_eq!(collected.len(), 4);
         let first = &collected[0];
         assert_eq!(first.catalog_metric, "login.online");
@@ -282,7 +279,11 @@ mod tests {
         assert_eq!(first.issued_at_unix_ms, 9_999);
         assert_eq!(
             first.window,
-            QueryWindow { start_unix_ms: 0, end_unix_ms: 4000, step_ms: 4000 }
+            QueryWindow {
+                start_unix_ms: 0,
+                end_unix_ms: 4000,
+                step_ms: 4000
+            }
         );
         match &first.outcome {
             CollectedOutcome::Series(series) => {
@@ -295,25 +296,21 @@ mod tests {
 
     #[test]
     fn provider_failure_is_kept_verbatim_never_zero() {
-        let scheduler =
-            QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
+        let scheduler = QueryScheduler::new(mapping_two_entries(), 4000).expect("scheduler");
         let collected = scheduler.collect(&SplitProvider, 0, 4000, 0);
         assert_eq!(collected.len(), 2);
         let second = &collected[1];
         assert_eq!(second.catalog_metric, "game.online");
         assert_eq!(
             second.outcome,
-            CollectedOutcome::Failed(
-                "metric provider returned http status 503".to_string()
-            )
+            CollectedOutcome::Failed("metric provider returned http status 503".to_string())
         );
         assert_eq!(failed_queries(&collected).len(), 1);
     }
 
     #[test]
     fn scheduler_serialises_with_its_mapping() {
-        let scheduler =
-            QueryScheduler::new(mapping_two_entries(), 1000).expect("scheduler");
+        let scheduler = QueryScheduler::new(mapping_two_entries(), 1000).expect("scheduler");
         let text = serde_yaml::to_string(&scheduler).expect("serialise");
         assert!(text.contains("step_ms: 1000"));
         let back: QueryScheduler = serde_yaml::from_str(&text).expect("reparse");
@@ -323,8 +320,7 @@ mod tests {
     #[test]
     fn interval_constructor_and_entry_lookup_work() {
         let mapping = mapping_two_entries();
-        let scheduler =
-            scheduler_from_interval(mapping, 15_000).expect("scheduler");
+        let scheduler = scheduler_from_interval(mapping, 15_000).expect("scheduler");
         assert_eq!(scheduler.step_ms(), 15_000);
         let collected = scheduler.collect(&SplitProvider, 0, 1000, 42);
         let entry = entry_of(scheduler.mapping(), &collected[0]);

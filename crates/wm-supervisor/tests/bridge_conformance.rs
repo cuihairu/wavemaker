@@ -75,8 +75,7 @@ impl Wire {
                 panic!("EOF while waiting for {:?}", wanted);
             }
             for frame in self.decoder.feed(&buf[..n]).unwrap() {
-                let message: Value = serde_json::from_slice(&frame)
-                    .expect("frame is valid JSON");
+                let message: Value = serde_json::from_slice(&frame).expect("frame is valid JSON");
                 self.pending.push(message);
             }
         }
@@ -93,9 +92,7 @@ impl Wire {
             match self.stream.read(&mut buf) {
                 Ok(0) => return,
                 Ok(_) => {}
-                Err(e)
-                    if e.kind() == ErrorKind::WouldBlock
-                        || e.kind() == ErrorKind::TimedOut => {}
+                Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {}
                 Err(e) => panic!("unexpected read error: {e}"),
             }
             assert!(
@@ -159,7 +156,10 @@ fn bridge_conformance_over_unix_socket() {
     assert_eq!(handshake["backend_id"], "kb-conf");
     assert_eq!(handshake["backend_generation"], 12);
     assert_eq!(handshake["capabilities"]["process"]["start"], "supported");
-    assert_eq!(handshake["capabilities"]["bots"]["create_batch"], "supported");
+    assert_eq!(
+        handshake["capabilities"]["bots"]["create_batch"],
+        "supported"
+    );
     assert_eq!(
         handshake["capabilities"]["observability"]["login_success"],
         "unknown"
@@ -209,10 +209,7 @@ fn bridge_conformance_over_unix_socket() {
         "payload",
         "schema_version",
     ] {
-        assert!(
-            event.get(field).is_some(),
-            "event envelope lacks {field}"
-        );
+        assert!(event.get(field).is_some(), "event envelope lacks {field}");
     }
     assert_eq!(event["event_id"], "kb-conf:1");
     assert_eq!(event["sequence"], 1);
@@ -255,9 +252,12 @@ fn bridge_conformance_over_unix_socket() {
             "heartbeat process metrics lack {field}"
         );
     }
-    for field in
-        ["queue_depth", "queue_dropped", "callback_lag_ms", "callback_lag_max_ms"]
-    {
+    for field in [
+        "queue_depth",
+        "queue_dropped",
+        "callback_lag_ms",
+        "callback_lag_max_ms",
+    ] {
         assert!(
             beat["metrics"].get(field).is_some(),
             "heartbeat bridge metrics lack {field}"

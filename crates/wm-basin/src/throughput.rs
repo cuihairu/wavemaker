@@ -36,9 +36,7 @@ pub enum ThroughputSource {
         catalog_metric: String,
     },
     /// Client section 5: a backend's effective request rate.
-    Client {
-        backend: String,
-    },
+    Client { backend: String },
 }
 
 /// One rate sample on the swell timeline.
@@ -100,9 +98,7 @@ pub fn server_rate_series(
     finite_samples.sort_by_key(|sample| sample.timestamp_unix_ms);
     for pair in finite_samples.windows(2) {
         let (first, second) = (pair[0], pair[1]);
-        let elapsed_s = (second.timestamp_unix_ms - first.timestamp_unix_ms)
-            as f64
-            / 1000.0;
+        let elapsed_s = (second.timestamp_unix_ms - first.timestamp_unix_ms) as f64 / 1000.0;
         if elapsed_s <= 0.0 {
             continue;
         }
@@ -112,9 +108,7 @@ pub fn server_rate_series(
             continue;
         }
         points.push(ThroughputPoint {
-            timeline_unix_ms: (first.timestamp_unix_ms
-                + second.timestamp_unix_ms)
-                / 2,
+            timeline_unix_ms: (first.timestamp_unix_ms + second.timestamp_unix_ms) / 2,
             per_second: delta / elapsed_s,
         });
     }
@@ -153,7 +147,9 @@ pub fn client_rate_series(
     }
     Ok(ThroughputSeries {
         kind,
-        source: ThroughputSource::Client { backend: backend.into() },
+        source: ThroughputSource::Client {
+            backend: backend.into(),
+        },
         points,
         resets_observed: 0,
     })
@@ -181,12 +177,9 @@ fn nearest_rank(sorted: &[f64], percentile: f64) -> f64 {
 impl ThroughputSeries {
     pub fn summarize(&self) -> Result<ThroughputSummary, ThroughputError> {
         if self.points.is_empty() {
-            return Err(ThroughputError::NotEnoughSamples(
-                "series".into(),
-            ));
+            return Err(ThroughputError::NotEnoughSamples("series".into()));
         }
-        let mut rates: Vec<f64> =
-            self.points.iter().map(|point| point.per_second).collect();
+        let mut rates: Vec<f64> = self.points.iter().map(|point| point.per_second).collect();
         rates.sort_by(|a, b| a.partial_cmp(b).expect("rates are finite"));
         Ok(ThroughputSummary {
             peak_per_second: *rates.last().expect("non-empty"),
@@ -210,9 +203,8 @@ impl ThroughputSeries {
         if expected_per_second <= 0.0 {
             return Ok(false);
         }
-        let deviation = ((summary.p50_per_second - expected_per_second)
-            / expected_per_second)
-            .abs();
+        let deviation =
+            ((summary.p50_per_second - expected_per_second) / expected_per_second).abs();
         Ok(deviation <= tolerance_ratio)
     }
 }
@@ -391,10 +383,10 @@ mod tests {
     fn percentiles_are_nearest_rank_observed_values() {
         // 10 points 1..10: p50 -> rank ceil(5)=5 -> 5; p95 -> ceil(9.5)=10 -> 10;
         // p99 -> ceil(9.9)=10 -> 10.
-        let rates: Vec<(i64, f64)> =
-            (1..=10).map(|index| (index as i64 * 1000, index as f64)).collect();
-        let throughput =
-            client_rate_series(ThroughputKind::Qps, "b", &rates).expect("series");
+        let rates: Vec<(i64, f64)> = (1..=10)
+            .map(|index| (index as i64 * 1000, index as f64))
+            .collect();
+        let throughput = client_rate_series(ThroughputKind::Qps, "b", &rates).expect("series");
         let summary = throughput.summarize().expect("summary");
         assert_eq!(summary.p50_per_second, 5.0);
         assert_eq!(summary.p95_per_second, 10.0);
@@ -407,18 +399,11 @@ mod tests {
         let rates: Vec<(i64, f64)> = (1..=10)
             .map(|index| (index as i64 * 1000, 20.0 + index as f64 * 0.1))
             .collect();
-        let throughput =
-            client_rate_series(ThroughputKind::Qps, "b", &rates).expect("series");
+        let throughput = client_rate_series(ThroughputKind::Qps, "b", &rates).expect("series");
         // Median ~20.55: within 10% of 20, not within 1%.
-        assert!(throughput
-            .magnitude_matches(20.0, 0.10)
-            .expect("check"));
-        assert!(!throughput
-            .magnitude_matches(20.0, 0.01)
-            .expect("check"));
-        assert!(!throughput
-            .magnitude_matches(0.0, 1.0)
-            .expect("check"));
+        assert!(throughput.magnitude_matches(20.0, 0.10).expect("check"));
+        assert!(!throughput.magnitude_matches(20.0, 0.01).expect("check"));
+        assert!(!throughput.magnitude_matches(0.0, 1.0).expect("check"));
     }
 
     #[test]
@@ -436,14 +421,10 @@ mod tests {
         assert!(text.contains("client:native-backend"));
         assert!(text.contains("200.000"));
 
-        let tps = client_rate_series(
-            ThroughputKind::Tps,
-            "b",
-            &[(0, 50.0)],
-        )
-        .expect("series")
-        .summarize()
-        .expect("summary");
+        let tps = client_rate_series(ThroughputKind::Tps, "b", &[(0, 50.0)])
+            .expect("series")
+            .summarize()
+            .expect("summary");
         assert!(tps.markdown().contains("tps"));
         assert!(tps.markdown().contains("tx/s"));
     }
@@ -459,8 +440,7 @@ mod tests {
         let summary = throughput.summarize().expect("summary");
         let json = serde_json::to_string(&summary).expect("json");
         assert!(json.contains("\"qps\""));
-        let back: ThroughputSummary =
-            serde_json::from_str(&json).expect("reparse");
+        let back: ThroughputSummary = serde_json::from_str(&json).expect("reparse");
         assert_eq!(back, summary);
     }
 }

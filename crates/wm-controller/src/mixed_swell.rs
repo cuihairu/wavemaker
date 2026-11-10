@@ -69,15 +69,15 @@ pub struct MixedSwellReport {
 pub enum MixedReportError {
     #[error("swell id must not be empty")]
     EmptySwellId,
-    #[error("backend {0} is in the aggregation but not in the fleet; its kind cannot be attributed")]
+    #[error(
+        "backend {0} is in the aggregation but not in the fleet; its kind cannot be attributed"
+    )]
     UnknownBackend(String),
     #[error("histogram merge failed: {0}")]
     MergeFailed(String),
 }
 
-fn merged_or_none(
-    aggregate: &BackendAggregate,
-) -> Result<Option<Histogram>, MixedReportError> {
+fn merged_or_none(aggregate: &BackendAggregate) -> Result<Option<Histogram>, MixedReportError> {
     match aggregate.merged_histogram() {
         Ok(histogram) => Ok(Some(histogram)),
         // No histograms on this backend is honest absence, not a report
@@ -132,7 +132,9 @@ pub fn build_mixed_swell_report(
 
     let mut groups: Vec<KindGroupReport> = groups.into_values().collect();
     for group in &mut groups {
-        group.backends.sort_by(|a, b| a.backend_id.cmp(&b.backend_id));
+        group
+            .backends
+            .sort_by(|a, b| a.backend_id.cmp(&b.backend_id));
     }
     let arrivals_total = groups.iter().map(|g| g.arrivals_total).sum();
     let rejected_total = groups.iter().map(|g| g.rejected_total).sum();
@@ -161,14 +163,21 @@ pub enum PlanConformanceError {
         backend_id: String,
         expected_kind: BackendKind,
     },
-    #[error("backend {backend_id} owns {shards} shards but declared only {slots} slots for its kind")]
+    #[error(
+        "backend {backend_id} owns {shards} shards but declared only {slots} slots for its kind"
+    )]
     CapacityExceeded {
         backend_id: String,
         shards: u32,
         slots: u32,
     },
-    #[error("plan entry {actor_or_bot_id} references backend {backend_id} which is not in the fleet")]
-    UnknownBackend { actor_or_bot_id: String, backend_id: String },
+    #[error(
+        "plan entry {actor_or_bot_id} references backend {backend_id} which is not in the fleet"
+    )]
+    UnknownBackend {
+        actor_or_bot_id: String,
+        backend_id: String,
+    },
 }
 
 /// Verify a plan over a mixed fleet is kind-consistent and respects
@@ -184,15 +193,14 @@ pub fn verify_mixed_plan_conformance(
         .iter()
         .map(|backend| (backend.backend_id.as_str(), backend.kind))
         .collect();
-    let mut shards_per_backend: BTreeMap<&str, std::collections::BTreeSet<u32>> =
-        BTreeMap::new();
+    let mut shards_per_backend: BTreeMap<&str, std::collections::BTreeSet<u32>> = BTreeMap::new();
     for entry in &plan.entries {
-        let kind = kind_of
-            .get(entry.backend_id.as_str())
-            .ok_or_else(|| PlanConformanceError::UnknownBackend {
+        let kind = kind_of.get(entry.backend_id.as_str()).ok_or_else(|| {
+            PlanConformanceError::UnknownBackend {
                 actor_or_bot_id: entry.actor_or_bot_id.clone(),
                 backend_id: entry.backend_id.clone(),
-            })?;
+            }
+        })?;
         let (expected_prefix, actual_prefix) = match kind {
             BackendKind::NativeRuntime => ("actor-", entry.actor_or_bot_id.as_str()),
             BackendKind::EngineBot => ("bot-", entry.actor_or_bot_id.as_str()),
@@ -230,11 +238,10 @@ pub fn verify_mixed_plan_conformance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregation::{WorkerMetrics, aggregate_metrics};
-    use crate::shard_plan::{PlanEntry, ShardRule, build_shard_plan};
+    use crate::aggregation::{aggregate_metrics, WorkerMetrics};
+    use crate::shard_plan::{build_shard_plan, PlanEntry, ShardRule};
     use wm_core::hdr::{
-        HdrParameters, HDR_HIGHEST_TRACKABLE_VALUE, HDR_LOWEST_DISCERNIBLE_VALUE,
-        HDR_SIG_FIGURES,
+        HdrParameters, HDR_HIGHEST_TRACKABLE_VALUE, HDR_LOWEST_DISCERNIBLE_VALUE, HDR_SIG_FIGURES,
     };
 
     fn native(id: &str, weight: f64) -> PlanBackend {
@@ -292,8 +299,14 @@ mod tests {
         ];
         let plan = build_shard_plan("sw-mixed", 6, &fleet, &arrivals).expect("plan");
         // Mixed: both kinds appear.
-        assert!(plan.entries.iter().any(|e| e.actor_or_bot_id.starts_with("actor-")));
-        assert!(plan.entries.iter().any(|e| e.actor_or_bot_id.starts_with("bot-")));
+        assert!(plan
+            .entries
+            .iter()
+            .any(|e| e.actor_or_bot_id.starts_with("actor-")));
+        assert!(plan
+            .entries
+            .iter()
+            .any(|e| e.actor_or_bot_id.starts_with("bot-")));
 
         let capacities = BTreeMap::from([
             (
@@ -402,7 +415,10 @@ mod tests {
 
         // Both kinds stay visible; Native group first (stable order).
         let kinds: Vec<BackendKind> = report.groups.iter().map(|g| g.kind).collect();
-        assert_eq!(kinds, vec![BackendKind::NativeRuntime, BackendKind::EngineBot]);
+        assert_eq!(
+            kinds,
+            vec![BackendKind::NativeRuntime, BackendKind::EngineBot]
+        );
         let native_group = &report.groups[0];
         let bot_group = &report.groups[1];
         assert_eq!(native_group.arrivals_total, 70, "counts summed within kind");

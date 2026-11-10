@@ -26,8 +26,8 @@
 use std::collections::BTreeMap;
 
 use crate::assertions::{
-    inconclusive_no_show, AssertionProviderContract, AssertionRecord,
-    AssertionSpec, OnFail, Trigger, TriggerSpec, WindowContext,
+    inconclusive_no_show, AssertionProviderContract, AssertionRecord, AssertionSpec, OnFail,
+    Trigger, TriggerSpec, WindowContext,
 };
 
 /// One executed assertion: the record plus the spec's failure policy —
@@ -408,16 +408,11 @@ mod tests {
 
     #[test]
     fn registration_validates_and_refuses_duplicates() {
-        AssertionScheduler::register(vec![
-            scenario_spec("a", "s"),
-            scenario_spec("b", "t"),
-        ])
-        .expect("valid set");
+        AssertionScheduler::register(vec![scenario_spec("a", "s"), scenario_spec("b", "t")])
+            .expect("valid set");
 
-        let duplicate = AssertionScheduler::register(vec![
-            scenario_spec("a", "s"),
-            scenario_spec("a", "t"),
-        ]);
+        let duplicate =
+            AssertionScheduler::register(vec![scenario_spec("a", "s"), scenario_spec("a", "t")]);
         assert_eq!(
             duplicate,
             Err(AssertionSchedulerError::DuplicateName("a".into()))
@@ -605,11 +600,9 @@ mod tests {
     fn attached_evidence_dir_rides_in_the_window_context() {
         let recording = Recording::new();
         let providers = providers_with(&recording);
-        let mut scheduler = AssertionScheduler::register(vec![scenario_spec(
-            "no-duplicate-roles",
-            "create-role",
-        )])
-        .expect("register");
+        let mut scheduler =
+            AssertionScheduler::register(vec![scenario_spec("no-duplicate-roles", "create-role")])
+                .expect("register");
         // §6.2: the Controller pre-creates the directory at registration
         // and attaches it; every window the assertion executes in
         // carries it.
@@ -631,11 +624,9 @@ mod tests {
         }
         // An assertion without an attached dir carries None — no path is
         // invented on its behalf.
-        let mut bare = AssertionScheduler::register(vec![scenario_spec(
-            "other-audit",
-            "create-role",
-        )])
-        .expect("register");
+        let mut bare =
+            AssertionScheduler::register(vec![scenario_spec("other-audit", "create-role")])
+                .expect("register");
         bare.on_scenario_finished(
             &providers,
             &ScenarioWindow::sample(),

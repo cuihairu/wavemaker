@@ -155,7 +155,10 @@ mod tests {
     use super::*;
 
     fn host(id: &str) -> Host {
-        Host { id: id.into(), labels: Labels::new() }
+        Host {
+            id: id.into(),
+            labels: Labels::new(),
+        }
     }
 
     fn service(id: &str, kind: ServiceKind, host: Option<&str>) -> Service {
@@ -204,8 +207,7 @@ mod tests {
                 text
             );
         }
-        let other: ServiceKind =
-            serde_yaml::from_str("!other mmr-service").expect("parse");
+        let other: ServiceKind = serde_yaml::from_str("!other mmr-service").expect("parse");
         assert_eq!(other, ServiceKind::Other("mmr-service".into()));
     }
 
@@ -234,10 +236,7 @@ mod tests {
             .expect("service declared");
         assert_eq!(
             topology.validate(),
-            Err(TopologyError::UnknownHostRef(
-                "s1".into(),
-                "ghost".into()
-            ))
+            Err(TopologyError::UnknownHostRef("s1".into(), "ghost".into()))
         );
     }
 
@@ -270,9 +269,7 @@ mod tests {
 
         // Coverage: everything except database services (the way the
         // metric mapping would answer).
-        let gaps = topology.uncovered_services(|service| {
-            service.kind != ServiceKind::Database
-        });
+        let gaps = topology.uncovered_services(|service| service.kind != ServiceKind::Database);
         assert_eq!(gaps, vec!["dbmgr".to_string()]);
 
         let empty = Topology::default();

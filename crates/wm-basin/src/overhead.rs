@@ -21,8 +21,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::baseline::{
-    evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD, BaselineEvaluation,
-    ObservationLevel, OverheadSamples,
+    evaluate, BaselineEvaluation, ObservationLevel, OverheadSamples,
+    ADR_PROPOSED_OVERHEAD_THRESHOLD,
 };
 
 /// The overhead policy: thresholds and the enablement rules the doc
@@ -79,18 +79,13 @@ pub fn can_enable(
         ObservationLevel::L0 => EnablementDecision::Allow,
         ObservationLevel::L1 | ObservationLevel::L2 => match baseline {
             None => EnablementDecision::Deny {
-                reason: format!(
-                    "{level:?} requires a measured overhead baseline before enabling"
-                ),
+                reason: format!("{level:?} requires a measured overhead baseline before enabling"),
             },
-            Some(evaluation)
-                if evaluation.median_overhead_ratio > policy.threshold_ratio =>
-            {
+            Some(evaluation) if evaluation.median_overhead_ratio > policy.threshold_ratio => {
                 EnablementDecision::Deny {
                     reason: format!(
                         "baseline overhead {:.4} exceeds policy threshold {:.4}",
-                        evaluation.median_overhead_ratio,
-                        policy.threshold_ratio
+                        evaluation.median_overhead_ratio, policy.threshold_ratio
                     ),
                 }
             }
@@ -212,8 +207,7 @@ mod tests {
         // Measured but over threshold.
         let degraded = evaluation(0.05);
         assert!(degraded.degraded);
-        let reason = match can_enable(&policy, ObservationLevel::L1, Some(&degraded))
-        {
+        let reason = match can_enable(&policy, ObservationLevel::L1, Some(&degraded)) {
             EnablementDecision::Deny { reason } => reason,
             other => panic!("expected denial, got {other:?}"),
         };
@@ -259,13 +253,8 @@ mod tests {
     fn mid_run_over_threshold_degrades_one_step_and_records() {
         let policy = OverheadPolicy::default();
         let hot = samples(&[0.04, 0.05, 0.04]);
-        let event = observe_overhead(
-            &policy,
-            ObservationLevel::L1,
-            &hot,
-            500_000,
-        )
-        .expect("degradation expected");
+        let event = observe_overhead(&policy, ObservationLevel::L1, &hot, 500_000)
+            .expect("degradation expected");
         assert_eq!(event.from_level, ObservationLevel::L1);
         assert_eq!(event.to_level, Some(ObservationLevel::L0));
         assert_eq!(event.median_overhead_ratio, 0.04);
@@ -287,8 +276,8 @@ mod tests {
     fn floor_degradation_records_the_fact_without_a_step() {
         let policy = OverheadPolicy::default();
         let hot = samples(&[0.5]);
-        let event = observe_overhead(&policy, ObservationLevel::L0, &hot, 0)
-            .expect("degraded at floor");
+        let event =
+            observe_overhead(&policy, ObservationLevel::L0, &hot, 0).expect("degraded at floor");
         assert_eq!(event.from_level, ObservationLevel::L0);
         assert_eq!(event.to_level, None);
     }

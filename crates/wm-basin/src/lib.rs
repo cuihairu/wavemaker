@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 pub mod alignment;
 pub mod assertion_report;
 pub mod assertion_scheduler;
-pub mod assertions;
 pub mod assertion_transport;
+pub mod assertions;
 pub mod baseline;
 pub mod catalog;
 pub mod correlation;
@@ -47,77 +47,66 @@ pub mod timestamps;
 pub mod topology;
 
 pub use alignment::{
-    common_window, shape_alignment_offset, AlignedStamp, ClockTrust,
-    SourceClock, TimelineAlignment, TimelineSpan,
+    common_window, shape_alignment_offset, AlignedStamp, ClockTrust, SourceClock,
+    TimelineAlignment, TimelineSpan,
 };
-pub use assertions::{
-    inconclusive_no_show, AssertionProviderContract, AssertionRecord,
-    AssertionRecordError, AssertionSpec, AssertionSpecError, AssertionStatus,
-    EvidenceKind, EvidenceRef, OnFail, PeriodicInterval, RecordWindow, Trigger,
-    TriggerSpec, WindowContext, WindowContextError,
+pub use assertion_report::{
+    assemble_assertions_section, enforce_r5, raw_data_artifacts, AssertionsSection, DataSource,
+    RawDataArtifact, TestValidity, ValidityVerdict,
 };
 pub use assertion_scheduler::{
-    AssertionOutcome, AssertionScheduler, AssertionSchedulerError, ProviderSet,
-    RecoveryWindow, ScenarioWindow,
+    AssertionOutcome, AssertionScheduler, AssertionSchedulerError, ProviderSet, RecoveryWindow,
+    ScenarioWindow,
 };
 pub use assertion_transport::{AssertionHttpTransport, HttpAssertionProvider, TcpPostTransport};
-pub use assertion_report::{
-    assemble_assertions_section, enforce_r5, raw_data_artifacts,
-    AssertionsSection, DataSource, RawDataArtifact, TestValidity,
-    ValidityVerdict,
-};
-pub use evidence::{
-    ArchiveStatus, EvidenceArchive, EvidenceError, RawDataReference,
-    EVIDENCE_BUNDLE_FORMAT,
+pub use assertions::{
+    inconclusive_no_show, AssertionProviderContract, AssertionRecord, AssertionRecordError,
+    AssertionSpec, AssertionSpecError, AssertionStatus, EvidenceKind, EvidenceRef, OnFail,
+    PeriodicInterval, RecordWindow, Trigger, TriggerSpec, WindowContext, WindowContextError,
 };
 pub use baseline::{
-    degrade_level, evaluate, ADR_PROPOSED_OVERHEAD_THRESHOLD,
-    BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,
-    OverheadSamples, BASELINE_WINDOW_MS,
+    degrade_level, evaluate, BaselineError, BaselineEvaluation, ObservationLevel, OverheadSample,
+    OverheadSamples, ADR_PROPOSED_OVERHEAD_THRESHOLD, BASELINE_WINDOW_MS,
 };
 pub use catalog::{CatalogError, Category, MetricCatalog, MetricDef, MetricKind, Unit};
 pub use correlation::{CorrelationContext, TimeRange};
+pub use environment::Environment;
+pub use evidence::{
+    ArchiveStatus, EvidenceArchive, EvidenceError, RawDataReference, EVIDENCE_BUNDLE_FORMAT,
+};
 pub use generator::{
-    aggregate, GeneratorAggregate, SaturationSignal, SaturationThresholds,
-    WorkerSnapshot,
+    aggregate, GeneratorAggregate, SaturationSignal, SaturationThresholds, WorkerSnapshot,
 };
 pub use labels::{DataQualityLabel, QualityEvidence, QualityLabelSet};
 pub use mapping::{MappingEntry, MappingError, MetricMapping};
+pub use observability::{ObservabilityConfig, ProviderKind, UnavailablePolicy};
+pub use overhead::{
+    can_enable, grant_l2, observe_overhead, DegradationEvent, EnablementDecision, L2Grant,
+    OverheadPolicy,
+};
+pub use preflight::{
+    decision_for, CheckOutcome, Preflight, PreflightCheck, PreflightDecision, PreflightReport,
+};
 pub use provider::{
-    HttpTransport, MetricProvider, PrometheusProvider, ProviderError,
-    ProviderSeries, QueryWindow, Sample, TcpHttpTransport,
-};
-pub use scheduler::{
-    scheduler_from_interval, entry_of, failed_queries, CollectedOutcome,
-    CollectedQuery, QueryScheduler, ScheduledQuery,
-};
-pub use server::{
-    aggregate_collected, aggregate_series, MetricAggregate, SampleSpan,
-};
-pub use timestamps::{
-    compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata,
-    MissingInterval, TimestampError, TimestampRecord,
-};
-pub use throughput::{
-    client_rate_series, server_rate_series, ThroughputError, ThroughputKind,
-    ThroughputPoint, ThroughputSeries, ThroughputSource, ThroughputSummary,
+    HttpTransport, MetricProvider, PrometheusProvider, ProviderError, ProviderSeries, QueryWindow,
+    Sample, TcpHttpTransport,
 };
 pub use quality::{
-    detect_delayed_samples, detect_missing_windows, quality_report,
-    QualityFinding, QualityReport,
+    detect_delayed_samples, detect_missing_windows, quality_report, QualityFinding, QualityReport,
 };
 pub use report::{CorrelationInput, CorrelationReport, ReportError};
-pub use preflight::{
-    decision_for, CheckOutcome, Preflight, PreflightCheck, PreflightDecision,
-    PreflightReport,
+pub use scheduler::{
+    entry_of, failed_queries, scheduler_from_interval, CollectedOutcome, CollectedQuery,
+    QueryScheduler, ScheduledQuery,
 };
-pub use environment::Environment;
-pub use observability::{
-    ObservabilityConfig, ProviderKind, UnavailablePolicy,
+pub use server::{aggregate_collected, aggregate_series, MetricAggregate, SampleSpan};
+pub use throughput::{
+    client_rate_series, server_rate_series, ThroughputError, ThroughputKind, ThroughputPoint,
+    ThroughputSeries, ThroughputSource, ThroughputSummary,
 };
-pub use overhead::{
-    can_enable, grant_l2, observe_overhead, DegradationEvent,
-    EnablementDecision, L2Grant, OverheadPolicy,
+pub use timestamps::{
+    compute_missing_intervals, ClockOffsetEstimate, CollectionMetadata, MissingInterval,
+    TimestampError, TimestampRecord,
 };
 pub use topology::Topology;
 
@@ -224,39 +213,32 @@ correlation:
     fn empty_environment_id_is_rejected() {
         let mut basin = sample();
         basin.environment.id = "  ".into();
-        assert_eq!(
-            basin.validate(),
-            Err(BasinError::EmptyEnvironmentId)
-        );
+        assert_eq!(basin.validate(), Err(BasinError::EmptyEnvironmentId));
     }
 
     #[test]
     fn zero_collection_interval_is_rejected() {
         let mut basin = sample();
         basin.observability.collection_interval_ms = 0;
-        assert_eq!(
-            basin.validate(),
-            Err(BasinError::ZeroCollectionInterval)
-        );
+        assert_eq!(basin.validate(), Err(BasinError::ZeroCollectionInterval));
     }
 
     #[test]
     fn provider_kinds_round_trip_through_yaml() {
-        let prometheus: ProviderKind =
-            serde_yaml::from_str("prometheus").expect("parse");
+        let prometheus: ProviderKind = serde_yaml::from_str("prometheus").expect("parse");
         assert_eq!(prometheus, ProviderKind::Prometheus);
         assert_eq!(
-            serde_yaml::to_string(&prometheus).expect("serialise").trim(),
+            serde_yaml::to_string(&prometheus)
+                .expect("serialise")
+                .trim(),
             "prometheus"
         );
 
-        let otel: ProviderKind =
-            serde_yaml::from_str("opentelemetry").expect("parse");
+        let otel: ProviderKind = serde_yaml::from_str("opentelemetry").expect("parse");
         assert_eq!(otel, ProviderKind::OpenTelemetry);
 
         // serde_yaml 0.9 represents newtype variants as tagged scalars.
-        let custom: ProviderKind =
-            serde_yaml::from_str("!custom inhouse").expect("parse");
+        let custom: ProviderKind = serde_yaml::from_str("!custom inhouse").expect("parse");
         assert_eq!(custom, ProviderKind::Custom("inhouse".into()));
         assert_eq!(
             serde_yaml::to_string(&custom).expect("serialise").trim(),
@@ -270,8 +252,7 @@ correlation:
             ("abort", UnavailablePolicy::Abort),
             ("mark_partial", UnavailablePolicy::MarkPartial),
         ] {
-            let parsed: UnavailablePolicy =
-                serde_yaml::from_str(text).expect("parse");
+            let parsed: UnavailablePolicy = serde_yaml::from_str(text).expect("parse");
             assert_eq!(parsed, policy);
         }
     }

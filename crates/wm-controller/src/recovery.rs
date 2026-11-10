@@ -243,7 +243,10 @@ mod tests {
             .iter()
             .map(|divergence| divergence.field.as_str())
             .collect();
-        assert_eq!(fields, vec!["generation", "state", "swell_binding", "plan_digest"]);
+        assert_eq!(
+            fields,
+            vec!["generation", "state", "swell_binding", "plan_digest"]
+        );
         let generation_divergence = &sync.divergences[0];
         assert_eq!(generation_divergence.backend_view, "4");
         assert_eq!(generation_divergence.controller_view, "8");
@@ -315,7 +318,10 @@ mod tests {
                 },
             )
             .expect("known backend");
-        assert!(resync.accepted, "adopting authority closes every divergence");
+        assert!(
+            resync.accepted,
+            "adopting authority closes every divergence"
+        );
         // ...and reports further transitions AT the authoritative
         // epoch — exactly what the generation guard admits.
         let generation = registry.backend("kb-conf").expect("record").generation;

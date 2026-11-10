@@ -26,14 +26,14 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use wm_controller::aggregation::{WorkerMetrics, aggregate_metrics};
+use wm_controller::aggregation::{aggregate_metrics, WorkerMetrics};
 use wm_controller::backend_registry::BackendKind;
 use wm_controller::capacity::ResourceCapacity;
 use wm_controller::mixed_swell::{build_mixed_swell_report, verify_mixed_plan_conformance};
 use wm_controller::registry::{
     AdmissionVerdict, RegistrationDecision, WorkerRegistration, WorkerRegistry, WorkerState,
 };
-use wm_controller::shard_plan::{PlanBackend, PlannedArrival, build_shard_plan};
+use wm_controller::shard_plan::{build_shard_plan, PlanBackend, PlannedArrival};
 use wm_core::hdr::{
     HdrParameters, Histogram, HDR_HIGHEST_TRACKABLE_VALUE, HDR_LOWEST_DISCERNIBLE_VALUE,
     HDR_SIG_FIGURES,
@@ -152,18 +152,32 @@ fn run_cycle(registry: &WorkerRegistry, cycle: u64) -> u64 {
 
     // Stale-generation fault: the w-a instance from an OLD process beats
     // at one behind its granted generation — refused, zero trace.
-    let mut stale = FaultyWorker::new("w-a", PROTOCOL_VERSION, gen_a, WorkerFault::StaleGenerationAfter { beats: 1 });
-    assert_eq!(stale.next_beat(), BeatAction::Heartbeat { generation: gen_a });
+    let mut stale = FaultyWorker::new(
+        "w-a",
+        PROTOCOL_VERSION,
+        gen_a,
+        WorkerFault::StaleGenerationAfter { beats: 1 },
+    );
     assert_eq!(
         stale.next_beat(),
-        BeatAction::Heartbeat { generation: gen_a - 1 }
+        BeatAction::Heartbeat { generation: gen_a }
+    );
+    assert_eq!(
+        stale.next_beat(),
+        BeatAction::Heartbeat {
+            generation: gen_a - 1
+        }
     );
     assert!(
         !registry.heartbeat("w-a", gen_a - 1),
         "old-generation beats never win (policy 7)"
     );
     let record = registry.worker("w-a").expect("record");
-    assert_eq!(record.state, WorkerState::Online, "refused beat leaves no trace");
+    assert_eq!(
+        record.state,
+        WorkerState::Online,
+        "refused beat leaves no trace"
+    );
     assert_eq!(record.generation, gen_a);
 
     // Deterministic mixed plan (byte-identical for identical inputs).
@@ -176,8 +190,14 @@ fn run_cycle(registry: &WorkerRegistry, cycle: u64) -> u64 {
         .collect();
     let plan = build_shard_plan(&swell_id, 6, &fleet, &arrivals).expect("plan");
     assert_eq!(plan.worker_count, 6);
-    assert!(plan.entries.iter().any(|e| e.actor_or_bot_id.starts_with("actor-")));
-    assert!(plan.entries.iter().any(|e| e.actor_or_bot_id.starts_with("bot-")));
+    assert!(plan
+        .entries
+        .iter()
+        .any(|e| e.actor_or_bot_id.starts_with("actor-")));
+    assert!(plan
+        .entries
+        .iter()
+        .any(|e| e.actor_or_bot_id.starts_with("bot-")));
     verify_mixed_plan_conformance(&plan, &fleet, &capacities()).expect("kind-conformant");
 
     // Aggregate: w-c contributed nothing this cycle (silent), so it is
@@ -185,17 +205,16 @@ fn run_cycle(registry: &WorkerRegistry, cycle: u64) -> u64 {
     let received = vec![metrics("w-a", "a-bot", 100), metrics("w-b", "b-native", 70)];
     let aggregation =
         aggregate_metrics(&["w-a", "w-b", "w-c"], received).expect("valid aggregation");
-    assert!(aggregation
-        .issues
-        .contains(&wm_controller::aggregation::AggregationIssue::MissingWorker {
+    assert!(aggregation.issues.contains(
+        &wm_controller::aggregation::AggregationIssue::MissingWorker {
             worker_id: "w-c".into()
-        }));
+        }
+    ));
     assert_eq!(aggregation.per_backend.len(), 2);
 
     // The mixed report: both kinds visible, counts summed honestly,
     // percentiles only ever per-backend (no cross-backend merge field).
-    let report =
-        build_mixed_swell_report(&swell_id, &fleet, aggregation).expect("mixed report");
+    let report = build_mixed_swell_report(&swell_id, &fleet, aggregation).expect("mixed report");
     assert_eq!(report.groups.len(), 2);
     assert_eq!(report.arrivals_total, 170);
     let bot = report
@@ -207,7 +226,10 @@ fn run_cycle(registry: &WorkerRegistry, cycle: u64) -> u64 {
     assert_eq!(bot.merged_histograms_per_backend.len(), 1);
     assert_eq!(bot.merged_histograms_per_backend[0].0, "a-bot");
     assert!(
-        bot.merged_histograms_per_backend[0].1.value_at_percentile(50.0) > 0,
+        bot.merged_histograms_per_backend[0]
+            .1
+            .value_at_percentile(50.0)
+            > 0,
         "the only percentile source is the per-backend merged histogram"
     );
 

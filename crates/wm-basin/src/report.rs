@@ -93,8 +93,9 @@ impl CorrelationReport {
         }
         let effective_window = common_window(&spans);
 
-        let saturation =
-            input.generator.saturation_signals(&input.generator_thresholds);
+        let saturation = input
+            .generator
+            .saturation_signals(&input.generator_thresholds);
 
         let evidence = QualityEvidence {
             quality: input.quality,
@@ -132,7 +133,9 @@ impl CorrelationReport {
     /// Preflight: "Complete server-side performance conclusions must not
     /// be given").
     pub fn server_conclusion_allowed(&self) -> bool {
-        !self.labels.contains(crate::labels::DataQualityLabel::Partial)
+        !self
+            .labels
+            .contains(crate::labels::DataQualityLabel::Partial)
     }
 
     /// The "Generator Saturated" rule: with saturation evidence present,
@@ -195,7 +198,10 @@ mod tests {
             .expect("define");
         let series = ProviderSeries {
             metric: Labels::new(),
-            samples: vec![Sample { timestamp_unix_ms: 0, value: 7.0 }],
+            samples: vec![Sample {
+                timestamp_unix_ms: 0,
+                value: 7.0,
+            }],
         };
         let query = CollectedQuery {
             entry_index: 0,
@@ -351,19 +357,15 @@ mod tests {
         }];
         let quality = quality_clean();
         let generator = generator_clean();
-        let assembled =
-            CorrelationReport::assemble(input(
-                &correlation,
-                &timeline,
-                &spans,
-                &quality,
-                &generator,
-                vec![],
-            ));
-        assert!(matches!(
-            assembled,
-            Err(ReportError::InvalidCorrelation(_))
+        let assembled = CorrelationReport::assemble(input(
+            &correlation,
+            &timeline,
+            &spans,
+            &quality,
+            &generator,
+            vec![],
         ));
+        assert!(matches!(assembled, Err(ReportError::InvalidCorrelation(_))));
     }
 
     #[test]
@@ -385,11 +387,8 @@ mod tests {
             vec![],
         );
         assembled_input.partial_observability = true;
-        let report = CorrelationReport::assemble(assembled_input)
-            .expect("assemble");
-        assert!(report
-            .labels
-            .contains(DataQualityLabel::Partial));
+        let report = CorrelationReport::assemble(assembled_input).expect("assemble");
+        assert!(report.labels.contains(DataQualityLabel::Partial));
         assert!(!report.labels.is_complete());
         assert!(!report.server_conclusion_allowed());
     }
@@ -419,9 +418,7 @@ mod tests {
         ))
         .expect("assemble");
         assert!(report.generator_saturated());
-        assert!(report
-            .labels
-            .contains(DataQualityLabel::GeneratorSaturated));
+        assert!(report.labels.contains(DataQualityLabel::GeneratorSaturated));
         assert_eq!(report.saturation.len(), 1);
     }
 

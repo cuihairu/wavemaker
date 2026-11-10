@@ -132,9 +132,8 @@ pub(crate) fn parse_url(url: &str) -> Result<ParsedUrl, ProviderError> {
     let (host, port) = match authority.rsplit_once(':') {
         Some((h, p)) => (
             h.to_string(),
-            p.parse::<u16>().map_err(|_| {
-                ProviderError::BadResponse(format!("malformed port in {url}"))
-            })?,
+            p.parse::<u16>()
+                .map_err(|_| ProviderError::BadResponse(format!("malformed port in {url}")))?,
         ),
         None => (authority.to_string(), 80),
     };
@@ -143,7 +142,11 @@ pub(crate) fn parse_url(url: &str) -> Result<ParsedUrl, ProviderError> {
             "malformed host in {url}"
         )));
     }
-    Ok(ParsedUrl { host, port, path: path.to_string() })
+    Ok(ParsedUrl {
+        host,
+        port,
+        path: path.to_string(),
+    })
 }
 
 /// Percent-encode a query-string value (RFC 3986 unreserved set kept).
@@ -151,8 +154,9 @@ fn percent_encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.'
-            | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             other => out.push_str(&format!("%{other:02X}")),
         }
     }
@@ -171,7 +175,11 @@ fn unix_ms_to_seconds_string(unix_ms: i64) -> String {
     }
 }
 
-fn query_range_url(base_url: &str, query: &str, window: &QueryWindow) -> Result<String, ProviderError> {
+fn query_range_url(
+    base_url: &str,
+    query: &str,
+    window: &QueryWindow,
+) -> Result<String, ProviderError> {
     window.validate()?;
     Ok(format!(
         "{}{}?query={}&start={}&end={}&step={}",
@@ -208,9 +216,8 @@ struct ApiData {
 }
 
 fn parse_query_response(body: &[u8]) -> Result<Vec<ProviderSeries>, ProviderError> {
-    let envelope: ApiEnvelope = serde_json::from_slice(body).map_err(|err| {
-        ProviderError::BadResponse(format!("body is not valid JSON: {err}"))
-    })?;
+    let envelope: ApiEnvelope = serde_json::from_slice(body)
+        .map_err(|err| ProviderError::BadResponse(format!("body is not valid JSON: {err}")))?;
     if envelope.status != "success" {
         if envelope.error.is_empty() {
             return Err(ProviderError::BadResponse(format!(
@@ -220,38 +227,35 @@ fn parse_query_response(body: &[u8]) -> Result<Vec<ProviderSeries>, ProviderErro
         }
         return Err(ProviderError::QueryFailed(envelope.error));
     }
-    let data = envelope.data.ok_or_else(|| {
-        ProviderError::BadResponse("success response without data".to_string())
-    })?;
+    let data = envelope
+        .data
+        .ok_or_else(|| ProviderError::BadResponse("success response without data".to_string()))?;
     if data.result_type != "matrix" {
         return Err(ProviderError::BadResponse(format!(
             "expected resultType matrix, got {:?}",
             data.result_type
         )));
     }
-    let entries = data.result.as_array().ok_or_else(|| {
-        ProviderError::BadResponse("matrix result is not an array".to_string())
-    })?;
+    let entries = data
+        .result
+        .as_array()
+        .ok_or_else(|| ProviderError::BadResponse("matrix result is not an array".to_string()))?;
     let mut series = Vec::with_capacity(entries.len());
     for entry in entries {
-        let labels_json = entry.get("metric").ok_or_else(|| {
-            ProviderError::BadResponse("matrix entry without metric".to_string())
+        let labels_json = entry
+            .get("metric")
+            .ok_or_else(|| ProviderError::BadResponse("matrix entry without metric".to_string()))?;
+        let metric: Labels = serde_json::from_value(labels_json.clone()).map_err(|err| {
+            ProviderError::BadResponse(format!("metric labels are not a string map: {err}"))
         })?;
-        let metric: Labels = serde_json::from_value(labels_json.clone())
-            .map_err(|err| {
-                ProviderError::BadResponse(format!(
-                    "metric labels are not a string map: {err}"
-                ))
-            })?;
-        let values = entry.get("values").and_then(|v| v.as_array()).ok_or_else(|| {
-            ProviderError::BadResponse("matrix entry without values".to_string())
-        })?;
+        let values = entry
+            .get("values")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| ProviderError::BadResponse("matrix entry without values".to_string()))?;
         let mut samples = Vec::with_capacity(values.len());
         for value in values {
             let pair = value.as_array().ok_or_else(|| {
-                ProviderError::BadResponse(
-                    "sample is not a [timestamp, value] pair".to_string(),
-                )
+                ProviderError::BadResponse("sample is not a [timestamp, value] pair".to_string())
             })?;
             if pair.len() != 2 {
                 return Err(ProviderError::BadResponse(
@@ -259,17 +263,13 @@ fn parse_query_response(body: &[u8]) -> Result<Vec<ProviderSeries>, ProviderErro
                 ));
             }
             let ts_seconds = pair[0].as_f64().ok_or_else(|| {
-                ProviderError::BadResponse(
-                    "sample timestamp is not a number".to_string(),
-                )
+                ProviderError::BadResponse("sample timestamp is not a number".to_string())
             })?;
             let text = pair[1].as_str().ok_or_else(|| {
                 ProviderError::BadResponse("sample value is not a string".to_string())
             })?;
             let parsed: f64 = text.parse().map_err(|_| {
-                ProviderError::BadResponse(format!(
-                    "sample value {text:?} is not a number"
-                ))
+                ProviderError::BadResponse(format!("sample value {text:?} is not a number"))
             })?;
             samples.push(Sample {
                 timestamp_unix_ms: (ts_seconds * 1000.0).round() as i64,
@@ -297,11 +297,11 @@ impl PrometheusProvider {
     }
 
     /// Inject a transport (tests; or TLS via an external impl).
-    pub fn with_transport(
-        base_url: impl Into<String>,
-        transport: Box<dyn HttpTransport>,
-    ) -> Self {
-        Self { base_url: base_url.into(), transport }
+    pub fn with_transport(base_url: impl Into<String>, transport: Box<dyn HttpTransport>) -> Self {
+        Self {
+            base_url: base_url.into(),
+            transport,
+        }
     }
 
     pub fn base_url(&self) -> &str {
@@ -363,22 +363,16 @@ impl HttpTransport for TcpHttpTransport {
                 Some(timeout) => {
                     let addr = format!("{host}:{port}");
                     let stream = std::net::ToSocketAddrs::to_socket_addrs(&addr)
-                        .map_err(|err| {
-                            ProviderError::Unreachable(format!("{addr}: {err}"))
-                        })?
+                        .map_err(|err| ProviderError::Unreachable(format!("{addr}: {err}")))?
                         .next()
                         .ok_or_else(|| {
-                            ProviderError::Unreachable(format!(
-                                "{addr}: no address resolved"
-                            ))
+                            ProviderError::Unreachable(format!("{addr}: no address resolved"))
                         })?;
                     TcpStream::connect_timeout(&stream, timeout)
                 }
                 None => TcpStream::connect((host, port)),
             };
-            stream.map_err(|err| {
-                ProviderError::Unreachable(format!("{}:{}: {err}", host, port))
-            })
+            stream.map_err(|err| ProviderError::Unreachable(format!("{}:{}: {err}", host, port)))
         };
         let mut stream = connect(&parsed.host, parsed.port)?;
 
@@ -408,9 +402,8 @@ impl fmt::Debug for TcpHttpTransport {
 }
 
 pub(crate) fn decode_http_response(raw: &[u8]) -> Result<HttpResponse, ProviderError> {
-    let header_end = find_header_end(raw).ok_or_else(|| {
-        ProviderError::BadResponse("no http header terminator found".to_string())
-    })?;
+    let header_end = find_header_end(raw)
+        .ok_or_else(|| ProviderError::BadResponse("no http header terminator found".to_string()))?;
     let head = String::from_utf8_lossy(&raw[..header_end]).into_owned();
     let mut lines = head.split("\r\n");
     let status_line = lines.next().unwrap_or_default();
@@ -419,9 +412,7 @@ pub(crate) fn decode_http_response(raw: &[u8]) -> Result<HttpResponse, ProviderE
         .nth(1)
         .and_then(|code| code.parse::<u16>().ok())
         .ok_or_else(|| {
-            ProviderError::BadResponse(format!(
-                "malformed http status line {status_line:?}"
-            ))
+            ProviderError::BadResponse(format!("malformed http status line {status_line:?}"))
         })?;
     let mut content_length: Option<usize> = None;
     let mut chunked = false;
@@ -433,9 +424,7 @@ pub(crate) fn decode_http_response(raw: &[u8]) -> Result<HttpResponse, ProviderE
         let value = value.trim();
         if name == "content-length" {
             content_length = value.parse().ok();
-        } else if name == "transfer-encoding"
-            && value.to_ascii_lowercase().contains("chunked")
-        {
+        } else if name == "transfer-encoding" && value.to_ascii_lowercase().contains("chunked") {
             chunked = true;
         }
     }
@@ -463,9 +452,7 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
 fn decode_chunked(mut bytes: &[u8]) -> Result<Vec<u8>, ProviderError> {
     let mut body = Vec::new();
     loop {
-        let Some(line_end) =
-            bytes.windows(2).position(|window| window == b"\r\n")
-        else {
+        let Some(line_end) = bytes.windows(2).position(|window| window == b"\r\n") else {
             return Err(ProviderError::BadResponse(
                 "chunked body: missing chunk size line".to_string(),
             ));
@@ -473,9 +460,7 @@ fn decode_chunked(mut bytes: &[u8]) -> Result<Vec<u8>, ProviderError> {
         let size_text = String::from_utf8_lossy(&bytes[..line_end]);
         let size_text = size_text.split(';').next().unwrap_or_default().trim();
         let size = usize::from_str_radix(size_text, 16).map_err(|_| {
-            ProviderError::BadResponse(format!(
-                "chunked body: bad chunk size {size_text:?}"
-            ))
+            ProviderError::BadResponse(format!("chunked body: bad chunk size {size_text:?}"))
         })?;
         bytes = &bytes[line_end + 2..];
         if size == 0 {
@@ -528,12 +513,8 @@ mod tests {
             end_unix_ms: 1_710_000_060_000,
             step_ms: 15_000,
         };
-        let url = query_range_url(
-            "http://prometheus:9090/",
-            r#"up{job="kbengine"}"#,
-            &window,
-        )
-        .expect("url");
+        let url = query_range_url("http://prometheus:9090/", r#"up{job="kbengine"}"#, &window)
+            .expect("url");
         assert!(url.starts_with("http://prometheus:9090/api/v1/query_range?"));
         assert!(url.contains(r#"query=up%7Bjob%3D%22kbengine%22%7D"#));
         assert!(url.contains("start=1710000000"));
@@ -548,8 +529,7 @@ mod tests {
             end_unix_ms: 1_710_000_000_500,
             step_ms: 1500,
         };
-        let url =
-            query_range_url("http://p:9090", "up", &window).expect("url");
+        let url = query_range_url("http://p:9090", "up", &window).expect("url");
         assert!(url.contains("start=1710000000.123"));
         assert!(url.contains("end=1710000000.500"));
         assert!(url.contains("step=1.500"));
@@ -617,10 +597,15 @@ mod tests {
             "http://prometheus:9090",
             Box::new(FakeTransport {
                 status: 503,
-                body: br#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#.to_vec(),
+                body: br#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
+                    .to_vec(),
             }),
         );
-        let window = QueryWindow { start_unix_ms: 0, end_unix_ms: 1, step_ms: 1 };
+        let window = QueryWindow {
+            start_unix_ms: 0,
+            end_unix_ms: 1,
+            step_ms: 1,
+        };
         assert_eq!(
             provider.query_range("up", &window),
             Err(ProviderError::BadStatus(503))
@@ -697,9 +682,11 @@ mod tests {
         });
 
         let transport = TcpHttpTransport::default();
-        let chunked =
-            transport.get(&format!("http://127.0.0.1:{port}/api/v1/query_range?query=up"))
-                .expect("chunked response");
+        let chunked = transport
+            .get(&format!(
+                "http://127.0.0.1:{port}/api/v1/query_range?query=up"
+            ))
+            .expect("chunked response");
         assert_eq!(chunked.status, 200);
         assert_eq!(chunked.body, br#"{"ok":true}"#.to_vec());
 
@@ -725,7 +712,10 @@ mod tests {
 
     impl HttpTransport for FakeTransport {
         fn get(&self, _url: &str) -> Result<HttpResponse, ProviderError> {
-            Ok(HttpResponse { status: self.status, body: self.body.clone() })
+            Ok(HttpResponse {
+                status: self.status,
+                body: self.body.clone(),
+            })
         }
     }
 }

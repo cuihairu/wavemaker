@@ -97,14 +97,12 @@ impl BackendAggregate {
             match &mut merged {
                 Some(target) => {
                     let mut incoming = histogram.clone();
-                    incoming
-                        .merge_from(target)
-                        .map_err(|error| match error {
-                            wm_core::hdr::HdrError::ParameterMismatch { .. } => {
-                                AggregationError::NothingToMerge
-                            }
-                            other => AggregationError::Hdr(other.to_string()),
-                        })?;
+                    incoming.merge_from(target).map_err(|error| match error {
+                        wm_core::hdr::HdrError::ParameterMismatch { .. } => {
+                            AggregationError::NothingToMerge
+                        }
+                        other => AggregationError::Hdr(other.to_string()),
+                    })?;
                     merged = Some(incoming);
                 }
                 None => merged = Some(histogram.clone()),
@@ -129,17 +127,13 @@ impl MetricsAggregation {
     /// arrival counts over the union window — never an average of
     /// per-Worker rates. Returns `None` for an empty or zero-length
     /// window rather than inventing a number.
-    pub fn effective_request_rate_per_backend(
-        &self,
-    ) -> Vec<(String, Option<f64>)> {
+    pub fn effective_request_rate_per_backend(&self) -> Vec<(String, Option<f64>)> {
         self.per_backend
             .iter()
             .map(|aggregate| {
                 let window_ms = aggregate.window_end_unix_ms - aggregate.window_start_unix_ms;
                 let rate = if window_ms > 0 {
-                    Some(
-                        aggregate.arrivals_total as f64 / (window_ms as f64 / 1000.0),
-                    )
+                    Some(aggregate.arrivals_total as f64 / (window_ms as f64 / 1000.0))
                 } else {
                     None
                 };
@@ -174,9 +168,7 @@ pub fn aggregate_metrics(
             return Err(AggregationError::EmptyWorkerId);
         }
         if metrics.window_end_unix_ms < metrics.window_start_unix_ms {
-            return Err(AggregationError::InvertedWindow(
-                metrics.worker_id.clone(),
-            ));
+            return Err(AggregationError::InvertedWindow(metrics.worker_id.clone()));
         }
     }
     let received_ids: Vec<&str> = received
@@ -263,7 +255,9 @@ pub fn aggregate_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wm_core::hdr::{HdrParameters, HDR_HIGHEST_TRACKABLE_VALUE, HDR_LOWEST_DISCERNIBLE_VALUE, HDR_SIG_FIGURES};
+    use wm_core::hdr::{
+        HdrParameters, HDR_HIGHEST_TRACKABLE_VALUE, HDR_LOWEST_DISCERNIBLE_VALUE, HDR_SIG_FIGURES,
+    };
 
     fn histogram(values: &[i64]) -> Histogram {
         let params = HdrParameters {
@@ -298,8 +292,7 @@ mod tests {
             metrics("w-b", Some("backend-1"), 150),
             metrics("w-c", Some("backend-2"), 70),
         ];
-        let aggregation =
-            aggregate_metrics(&["w-a", "w-b", "w-c"], received).expect("valid input");
+        let aggregation = aggregate_metrics(&["w-a", "w-b", "w-c"], received).expect("valid input");
         assert_eq!(aggregation.issues, Vec::new());
         assert_eq!(aggregation.per_backend.len(), 2);
 
@@ -333,8 +326,7 @@ mod tests {
             metrics("w-a", Some("backend-1"), 10),
             metrics("w-b", Some("backend-1"), 20),
         ];
-        let aggregation =
-            aggregate_metrics(&["w-a", "w-b"], received).expect("valid input");
+        let aggregation = aggregate_metrics(&["w-a", "w-b"], received).expect("valid input");
         let histograms = &aggregation.per_backend[0].histograms_per_worker;
         assert_eq!(histograms.len(), 2);
         // Each worker's histogram is intact — the report's §11.2 rule
@@ -351,8 +343,7 @@ mod tests {
     #[test]
     fn missing_workers_are_named_never_rendered_as_zeros() {
         let received = vec![metrics("w-a", Some("backend-1"), 100)];
-        let aggregation = aggregate_metrics(&["w-a", "w-b", "w-c"], received)
-            .expect("valid input");
+        let aggregation = aggregate_metrics(&["w-a", "w-b", "w-c"], received).expect("valid input");
         assert_eq!(
             aggregation.issues,
             vec![
@@ -383,10 +374,12 @@ mod tests {
         let aggregation =
             aggregate_metrics(&["w-a", "w-b", "w-free"], received).expect("valid input");
         // Window mismatch: union window used, mismatch visible.
-        assert!(aggregation.issues.contains(&AggregationIssue::WindowMismatch {
-            backend_id: "backend-1".into(),
-            workers: vec!["w-a".into(), "w-b".into()],
-        }));
+        assert!(aggregation
+            .issues
+            .contains(&AggregationIssue::WindowMismatch {
+                backend_id: "backend-1".into(),
+                workers: vec!["w-a".into(), "w-b".into()],
+            }));
         let backend1 = &aggregation.per_backend[0];
         assert_eq!(
             (backend1.window_start_unix_ms, backend1.window_end_unix_ms),
@@ -410,8 +403,8 @@ mod tests {
         fast.latency_histogram = histogram(&[1_000_000, 1_000_000, 2_000_000]);
         let mut slow = metrics("w-slow", Some("backend-1"), 1);
         slow.latency_histogram = histogram(&[9_000_000_000, 9_000_000_000, 3_600_000_000_000]);
-        let aggregation = aggregate_metrics(&["w-fast", "w-slow"], vec![fast, slow])
-            .expect("valid input");
+        let aggregation =
+            aggregate_metrics(&["w-fast", "w-slow"], vec![fast, slow]).expect("valid input");
         let backend1 = &aggregation.per_backend[0];
 
         // The honest aggregate: merge counts, THEN read percentiles.

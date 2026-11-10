@@ -164,9 +164,7 @@ mod tests {
             window: None,
             trigger: Some(crate::assertions::Trigger::AfterScenario),
             message: match status {
-                AssertionStatus::Fail => {
-                    Some("3 duplicate role pairs found".into())
-                }
+                AssertionStatus::Fail => Some("3 duplicate role pairs found".into()),
                 _ => None,
             },
             evidence: vec![EvidenceRef {
@@ -251,19 +249,28 @@ mod tests {
     #[test]
     fn section_quality_follows_the_53_table() {
         // All pass → Complete.
-        let all_pass = vec![record("a", AssertionStatus::Pass), record("b", AssertionStatus::Pass)];
+        let all_pass = vec![
+            record("a", AssertionStatus::Pass),
+            record("b", AssertionStatus::Pass),
+        ];
         let section = assemble_assertions_section(&all_pass);
         assert!(section.quality.contains(DataQualityLabel::Complete));
         assert!(section.quality.is_complete());
 
         // Any fail → validity degrades elsewhere; data quality stays
         // honest (the evidence arrived).
-        let with_fail = vec![record("a", AssertionStatus::Pass), record("b", AssertionStatus::Fail)];
+        let with_fail = vec![
+            record("a", AssertionStatus::Pass),
+            record("b", AssertionStatus::Fail),
+        ];
         let section = assemble_assertions_section(&with_fail);
         assert!(section.quality.is_complete());
 
         // Any inconclusive → Missing + Partial.
-        let with_inconclusive = vec![record("a", AssertionStatus::Pass), record("b", AssertionStatus::Inconclusive)];
+        let with_inconclusive = vec![
+            record("a", AssertionStatus::Pass),
+            record("b", AssertionStatus::Inconclusive),
+        ];
         let section = assemble_assertions_section(&with_inconclusive);
         assert!(section.quality.contains(DataQualityLabel::Missing));
         assert!(section.quality.contains(DataQualityLabel::Partial));
@@ -272,10 +279,7 @@ mod tests {
         // Empty result set is a named gap, never Complete.
         let section = assemble_assertions_section(&[]);
         assert!(section.quality.contains(DataQualityLabel::Missing));
-        assert_eq!(
-            section.notes.as_deref(),
-            Some("empty result set")
-        );
+        assert_eq!(section.notes.as_deref(), Some("empty result set"));
     }
 
     #[test]

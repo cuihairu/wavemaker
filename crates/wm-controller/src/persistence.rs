@@ -53,15 +53,11 @@ pub enum PersistenceError {
 }
 
 /// Write the snapshot atomically (temp file + rename, no torn reads).
-pub fn save_snapshot(
-    path: &Path,
-    snapshot: &ControllerSnapshot,
-) -> Result<(), PersistenceError> {
+pub fn save_snapshot(path: &Path, snapshot: &ControllerSnapshot) -> Result<(), PersistenceError> {
     let json = serde_json::to_string_pretty(snapshot).map_err(PersistenceError::Serialize)?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, json).map_err(|e| PersistenceError::Io(path.display().to_string(), e))?;
-    std::fs::rename(&tmp, path)
-        .map_err(|e| PersistenceError::Io(path.display().to_string(), e))
+    std::fs::rename(&tmp, path).map_err(|e| PersistenceError::Io(path.display().to_string(), e))
 }
 
 /// Read a snapshot back. Deserialization is the first gate — a
@@ -69,8 +65,7 @@ pub fn save_snapshot(
 pub fn load_snapshot(path: &Path) -> Result<ControllerSnapshot, PersistenceError> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| PersistenceError::Io(path.display().to_string(), e))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| PersistenceError::Corrupt(path.display().to_string(), e))
+    serde_json::from_str(&raw).map_err(|e| PersistenceError::Corrupt(path.display().to_string(), e))
 }
 
 /// Reconstruct both registries from a snapshot. Every record is
@@ -110,8 +105,12 @@ mod tests {
 
     fn build_snapshot() -> ControllerSnapshot {
         let workers = WorkerRegistry::new(1000, 5000).expect("lease config");
-        workers.register(worker_registration("w-a")).expect("accept");
-        workers.register(worker_registration("w-b")).expect("accept");
+        workers
+            .register(worker_registration("w-a"))
+            .expect("accept");
+        workers
+            .register(worker_registration("w-b"))
+            .expect("accept");
         workers.mark_lost("w-b");
 
         let backends = BackendRegistry::new();
@@ -149,7 +148,10 @@ mod tests {
         let (workers, backends) =
             restore_controller(loaded, 1000, 5000).expect("valid snapshot restores");
         assert_eq!(workers.workers().len(), 2);
-        assert_eq!(workers.worker("w-b").expect("record").state, crate::registry::WorkerState::LostContact);
+        assert_eq!(
+            workers.worker("w-b").expect("record").state,
+            crate::registry::WorkerState::LostContact
+        );
         assert_eq!(backends.backends().len(), 1);
         assert_eq!(
             backends.backend("kb-conf").expect("record").state,
@@ -191,9 +193,8 @@ mod tests {
         // restore must fail, naming the reason, and no registry is
         // produced.
         let mut snapshot = build_snapshot();
-        snapshot.backends.backends[0]
-            .transitions
-            .push(crate::backend_registry::BackendTransition {
+        snapshot.backends.backends[0].transitions.push(
+            crate::backend_registry::BackendTransition {
                 backend_id: "kb-conf".into(),
                 swell_id: None,
                 state: BackendState::Running,
@@ -201,7 +202,8 @@ mod tests {
                 reason_code: "jump".into(),
                 detail: String::new(),
                 generation: 3,
-            });
+            },
+        );
         snapshot.backends.backends[0].state = BackendState::Running;
         snapshot.backends.backends[0].generation = 3;
         let outcome = restore_controller(snapshot, 1000, 5000);

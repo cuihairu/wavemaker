@@ -53,9 +53,15 @@ mod tests {
 
     #[test]
     fn time_range_rejects_inverted_windows() {
-        let ok = TimeRange { start_unix_ms: 100, end_unix_ms: 200 };
+        let ok = TimeRange {
+            start_unix_ms: 100,
+            end_unix_ms: 200,
+        };
         assert_eq!(ok.validate(), Ok(()));
-        let inverted = TimeRange { start_unix_ms: 200, end_unix_ms: 100 };
+        let inverted = TimeRange {
+            start_unix_ms: 200,
+            end_unix_ms: 100,
+        };
         assert_eq!(
             inverted.validate(),
             Err(BasinError::InvertedTimeRange(200, 100))
@@ -83,8 +89,7 @@ mod tests {
             }),
         };
         let text = serde_yaml::to_string(&context).expect("serialise");
-        let back: CorrelationContext =
-            serde_yaml::from_str(&text).expect("reparse");
+        let back: CorrelationContext = serde_yaml::from_str(&text).expect("reparse");
         assert_eq!(back, context);
     }
 }

@@ -178,9 +178,7 @@ impl MetricCatalog {
             Category::Process,
             Category::Process,
         ];
-        for ((name, kind, unit, description), category) in
-            defs.into_iter().zip(categories)
-        {
+        for ((name, kind, unit, description), category) in defs.into_iter().zip(categories) {
             catalog
                 .define(MetricDef {
                     name: name.into(),
@@ -228,9 +226,7 @@ mod tests {
             .expect("first");
         assert_eq!(
             catalog.define(def("process.rss_bytes", Category::Process)),
-            Err(CatalogError::DuplicateMetric(
-                "process.rss_bytes".into()
-            ))
+            Err(CatalogError::DuplicateMetric("process.rss_bytes".into()))
         );
     }
 

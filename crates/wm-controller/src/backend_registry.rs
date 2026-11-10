@@ -262,7 +262,9 @@ impl BackendRegistry {
         let mut inner = HashMap::new();
         for record in snapshot.backends {
             if record.backend_id.trim().is_empty() {
-                return Err(BackendRegistryError::RestoreEmptyBackendId(record.backend_id));
+                return Err(BackendRegistryError::RestoreEmptyBackendId(
+                    record.backend_id,
+                ));
             }
             if inner.contains_key(&record.backend_id) {
                 return Err(BackendRegistryError::RestoreDuplicateBackend(
@@ -270,7 +272,9 @@ impl BackendRegistry {
                 ));
             }
             if record.transitions.is_empty() {
-                return Err(BackendRegistryError::RestoreNoTransitions(record.backend_id));
+                return Err(BackendRegistryError::RestoreNoTransitions(
+                    record.backend_id,
+                ));
             }
             let first = &record.transitions[0];
             if first.generation != 1 || first.state != BackendState::Created {
@@ -306,7 +310,10 @@ impl BackendRegistry {
                         previous: replayed_generation,
                     });
                 }
-                if !replayed_state.legal_successors().contains(&transition.state) {
+                if !replayed_state
+                    .legal_successors()
+                    .contains(&transition.state)
+                {
                     return Err(BackendRegistryError::RestoreIllegalTransition {
                         backend: record.backend_id.clone(),
                         index,
@@ -495,12 +502,20 @@ mod tests {
 
     fn happy_path(registry: &BackendRegistry, id: &str) {
         let steps = [
-            (BackendState::Handshaking, "handshake-ok", "engine bridge online"),
+            (
+                BackendState::Handshaking,
+                "handshake-ok",
+                "engine bridge online",
+            ),
             (BackendState::Ready, "handshake-complete", ""),
             (BackendState::Initialized, "init-ok", ""),
             (BackendState::PlanAccepted, "plan-applied", "shard-plan v3"),
             (BackendState::Running, "start-ok", ""),
-            (BackendState::AdmissionStopped, "stop-admission", "fault injection"),
+            (
+                BackendState::AdmissionStopped,
+                "stop-admission",
+                "fault injection",
+            ),
             (BackendState::Draining, "drain", ""),
             (BackendState::Stopped, "drained", ""),
         ];
@@ -518,14 +533,7 @@ mod tests {
         detail: &str,
     ) -> Result<BackendTransition, BackendRegistryError> {
         let generation = registry.backend(id).expect("record").generation;
-        registry.report_transition(
-            id,
-            generation,
-            to,
-            Some("sw-1".into()),
-            reason,
-            detail,
-        )
+        registry.report_transition(id, generation, to, Some("sw-1".into()), reason, detail)
     }
 
     #[test]
@@ -551,7 +559,10 @@ mod tests {
         let record = registry
             .register("odd", BackendKind::NativeRuntime, 0.0)
             .expect("register");
-        assert_eq!(record.weight, 0.0, "D1: the registry does not judge weights");
+        assert_eq!(
+            record.weight, 0.0,
+            "D1: the registry does not judge weights"
+        );
     }
 
     #[test]
@@ -597,7 +608,13 @@ mod tests {
         registry
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
-        let outcome = report(&registry, "kb-conf", BackendState::Running, "jump-ahead", "");
+        let outcome = report(
+            &registry,
+            "kb-conf",
+            BackendState::Running,
+            "jump-ahead",
+            "",
+        );
         assert!(matches!(
             outcome,
             Err(BackendRegistryError::IllegalTransition {
@@ -616,14 +633,7 @@ mod tests {
     fn unknown_backend_and_empty_reason_are_refused() {
         let registry = BackendRegistry::new();
         assert!(matches!(
-            registry.report_transition(
-                "ghost",
-                1,
-                BackendState::Handshaking,
-                None,
-                "x",
-                ""
-            ),
+            registry.report_transition("ghost", 1, BackendState::Handshaking, None, "x", ""),
             Err(BackendRegistryError::UnknownBackend(_))
         ));
         registry
@@ -641,8 +651,14 @@ mod tests {
         registry
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
-        report(&registry, "kb-conf", BackendState::Handshaking, "handshake-start", "")
-            .expect("step");
+        report(
+            &registry,
+            "kb-conf",
+            BackendState::Handshaking,
+            "handshake-start",
+            "",
+        )
+        .expect("step");
         report(
             &registry,
             "kb-conf",
@@ -652,12 +668,23 @@ mod tests {
         )
         .expect("degrade from handshaking");
         // Degraded stacks another reason without changing state shape.
-        report(&registry, "kb-conf", BackendState::Degraded, "events-lagging", "")
-            .expect("degrade again");
-        report(&registry, "kb-conf", BackendState::Failed, "handshake-timeout", "")
-            .expect("worsen");
-        report(&registry, "kb-conf", BackendState::Recovering, "retry", "")
-            .expect("recover");
+        report(
+            &registry,
+            "kb-conf",
+            BackendState::Degraded,
+            "events-lagging",
+            "",
+        )
+        .expect("degrade again");
+        report(
+            &registry,
+            "kb-conf",
+            BackendState::Failed,
+            "handshake-timeout",
+            "",
+        )
+        .expect("worsen");
+        report(&registry, "kb-conf", BackendState::Recovering, "retry", "").expect("recover");
         let record = registry.backend("kb-conf").expect("record");
         assert_eq!(record.state, BackendState::Recovering);
         assert!(record
@@ -676,7 +703,10 @@ mod tests {
         let outcome = report(&registry, "kb-conf", BackendState::Running, "zombie", "");
         assert!(matches!(
             outcome,
-            Err(BackendRegistryError::IllegalTransition { from: BackendState::Stopped, .. })
+            Err(BackendRegistryError::IllegalTransition {
+                from: BackendState::Stopped,
+                ..
+            })
         ));
     }
 
@@ -687,7 +717,11 @@ mod tests {
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
         assert!(
-            registry.backend("kb-conf").expect("record").capacity.is_none(),
+            registry
+                .backend("kb-conf")
+                .expect("record")
+                .capacity
+                .is_none(),
             "before any declaration, capacity is unknown — not zero"
         );
         let declared = crate::capacity::ResourceCapacity {
@@ -883,8 +917,14 @@ mod tests {
             "replay reproduces the record exactly, facts included"
         );
         // A restored registry keeps enforcing the D3 machine.
-        report(&restored, "kb-conf", BackendState::AdmissionStopped, "stop-admission", "")
-            .expect("restored backend still walks the machine");
+        report(
+            &restored,
+            "kb-conf",
+            BackendState::AdmissionStopped,
+            "stop-admission",
+            "",
+        )
+        .expect("restored backend still walks the machine");
     }
 
     #[test]
@@ -1041,7 +1081,11 @@ mod tests {
             .expect("register");
         {
             let mut inner = registry.inner.lock().unwrap();
-            inner.get_mut("kb-conf").expect("record").transitions.clear();
+            inner
+                .get_mut("kb-conf")
+                .expect("record")
+                .transitions
+                .clear();
         }
         assert!(matches!(
             BackendRegistry::restore(registry.snapshot()),
@@ -1085,13 +1129,19 @@ mod tests {
         ));
 
         // A duplicate backend id in one snapshot.
-        let mut snapshot = BackendSnapshot { backends: Vec::new() };
+        let mut snapshot = BackendSnapshot {
+            backends: Vec::new(),
+        };
         let registry = BackendRegistry::new();
         registry
             .register("kb-conf", BackendKind::EngineBot, 1.0)
             .expect("register");
-        snapshot.backends.push(registry.backend("kb-conf").expect("record"));
-        snapshot.backends.push(registry.backend("kb-conf").expect("record"));
+        snapshot
+            .backends
+            .push(registry.backend("kb-conf").expect("record"));
+        snapshot
+            .backends
+            .push(registry.backend("kb-conf").expect("record"));
         assert!(matches!(
             BackendRegistry::restore(snapshot),
             Err(BackendRegistryError::RestoreDuplicateBackend(backend)) if backend == "kb-conf"

@@ -13,7 +13,7 @@
 use std::time::Duration;
 
 use wm_controller::registry::{
-    AdmissionVerdict, RegistrationDecision, WorkerRegistry, WorkerRegistration, WorkerState,
+    AdmissionVerdict, RegistrationDecision, WorkerRegistration, WorkerRegistry, WorkerState,
 };
 use wm_protocol::PROTOCOL_VERSION;
 use wm_worker::fault::{BeatAction, FaultyWorker, WorkerFault};
@@ -101,7 +101,10 @@ fn silence_after_leases_the_worker_into_lost_contact_and_freezes_admission() {
     // Recovery (automatic retry is allowed): a fresh beat restores
     // Online and reopens admission.
     assert!(registry.heartbeat("w1", granted));
-    assert_eq!(registry.worker("w1").expect("record").state, WorkerState::Online);
+    assert_eq!(
+        registry.worker("w1").expect("record").state,
+        WorkerState::Online
+    );
     assert_eq!(
         registry.admission_verdicts(&["w1"]),
         vec![("w1".to_string(), AdmissionVerdict::Admit)]
@@ -147,13 +150,19 @@ fn deregister_after_leaves_the_record_and_refuses_further_beats() {
 
     // Slot 0: healthy beat. Slot 1: the worker leaves explicitly.
     assert_eq!(replay(&registry, &mut worker, 1), vec![true]);
-    assert_eq!(registry.worker("w1").expect("record").state, WorkerState::Online);
+    assert_eq!(
+        registry.worker("w1").expect("record").state,
+        WorkerState::Online
+    );
     assert_eq!(worker.next_beat(), BeatAction::Leave);
     assert!(registry.deregister("w1"), "the leave is applied");
 
     // Leave is recorded (Deregistered), the record is retained for
     // restart recovery and audit, and later beats are refused.
-    assert_eq!(registry.worker("w1").expect("record").state, WorkerState::Deregistered);
+    assert_eq!(
+        registry.worker("w1").expect("record").state,
+        WorkerState::Deregistered
+    );
     assert!(!registry.heartbeat("w1", granted), "no beats after leave");
     assert!(registry.worker("w1").is_some(), "record retained");
     assert_eq!(
@@ -187,7 +196,10 @@ fn restart_after_rejoins_with_a_fresh_generation_and_old_events_die() {
 
     // The rejoined worker beats at the fresh generation and is accepted.
     assert_eq!(replay(&registry, &mut worker, 1), vec![true]);
-    assert_eq!(registry.worker("w1").expect("record").state, WorkerState::Online);
+    assert_eq!(
+        registry.worker("w1").expect("record").state,
+        WorkerState::Online
+    );
 
     // An OLD-generation event from the previous process is refused and
     // leaves the new state untouched (policy 7).
@@ -203,12 +215,7 @@ fn restart_after_rejoins_with_a_fresh_generation_and_old_events_die() {
 #[test]
 fn protocol_mismatch_is_rejected_at_handshake_and_never_admitted() {
     let registry = WorkerRegistry::new(1000, 5000).expect("lease config");
-    let worker = FaultyWorker::new(
-        "w1",
-        PROTOCOL_VERSION,
-        0,
-        WorkerFault::ProtocolMismatch,
-    );
+    let worker = FaultyWorker::new("w1", PROTOCOL_VERSION, 0, WorkerFault::ProtocolMismatch);
     assert!(worker.is_protocol_mismatch());
 
     // §5.3: the handshake rejects the mismatched worker with a reason —
@@ -225,12 +232,18 @@ fn protocol_mismatch_is_rejected_at_handshake_and_never_admitted() {
     let decision = registry.register(registration).expect("valid input");
     match decision {
         RegistrationDecision::Rejected { reason } => {
-            assert!(reason.contains("protocol version"), "reason names the mismatch");
+            assert!(
+                reason.contains("protocol version"),
+                "reason names the mismatch"
+            );
         }
         RegistrationDecision::Accepted { .. } => {
             panic!("a mismatched worker must be rejected, never admitted")
         }
     }
-    assert!(registry.worker("w1").is_none(), "rejected workers are not registered");
+    assert!(
+        registry.worker("w1").is_none(),
+        "rejected workers are not registered"
+    );
     assert!(registry.admitting_workers().is_empty());
 }

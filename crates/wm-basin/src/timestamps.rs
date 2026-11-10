@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::Labels;
 use crate::provider::QueryWindow;
+use crate::Labels;
 
 /// The three-stamp triple per sample.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,10 +208,7 @@ mod tests {
             offset_ms: -12,
             method: "  ".into(),
         });
-        assert_eq!(
-            metadata.validate(),
-            Err(TimestampError::EmptyOffsetMethod)
-        );
+        assert_eq!(metadata.validate(), Err(TimestampError::EmptyOffsetMethod));
 
         metadata.clock_offset = Some(ClockOffsetEstimate {
             offset_ms: -12,
@@ -221,8 +218,7 @@ mod tests {
 
         let text = serde_yaml::to_string(&metadata).expect("serialise");
         assert!(text.contains("probe-roundtrip"));
-        let back: CollectionMetadata =
-            serde_yaml::from_str(&text).expect("reparse");
+        let back: CollectionMetadata = serde_yaml::from_str(&text).expect("reparse");
         assert_eq!(back, metadata);
     }
 
@@ -258,13 +254,21 @@ mod tests {
         assert_eq!(
             missing,
             vec![
-                MissingInterval { start_unix_ms: 0, end_unix_ms: 1000 },
-                MissingInterval { start_unix_ms: 2000, end_unix_ms: 4000 },
+                MissingInterval {
+                    start_unix_ms: 0,
+                    end_unix_ms: 1000
+                },
+                MissingInterval {
+                    start_unix_ms: 2000,
+                    end_unix_ms: 4000
+                },
             ]
         );
 
-        let all_there: BTreeSet<(i64, i64)> =
-            expected.iter().map(|w| (w.start_unix_ms, w.end_unix_ms)).collect();
+        let all_there: BTreeSet<(i64, i64)> = expected
+            .iter()
+            .map(|w| (w.start_unix_ms, w.end_unix_ms))
+            .collect();
         assert!(compute_missing_intervals(&expected, &all_there).is_empty());
     }
 

@@ -63,7 +63,8 @@ impl OverheadSamples {
             return Err(BaselineError::NoSamples);
         }
         for sample in &samples {
-            if !sample.overhead_ratio.is_finite() || sample.overhead_ratio < 0.0
+            if !sample.overhead_ratio.is_finite()
+                || sample.overhead_ratio < 0.0
                 || sample.overhead_ratio > 1.0
             {
                 return Err(BaselineError::InvalidRatio(sample.overhead_ratio));
@@ -85,8 +86,11 @@ impl OverheadSamples {
     }
 
     fn sorted_ratios(&self) -> Vec<f64> {
-        let mut ratios: Vec<f64> =
-            self.samples.iter().map(|sample| sample.overhead_ratio).collect();
+        let mut ratios: Vec<f64> = self
+            .samples
+            .iter()
+            .map(|sample| sample.overhead_ratio)
+            .collect();
         ratios.sort_by(|a, b| a.partial_cmp(b).expect("ratios are finite"));
         ratios
     }
@@ -172,7 +176,10 @@ mod tests {
     use super::*;
 
     fn sample(at_ms: i64, ratio: f64) -> OverheadSample {
-        OverheadSample { at_unix_ms: at_ms, overhead_ratio: ratio }
+        OverheadSample {
+            at_unix_ms: at_ms,
+            overhead_ratio: ratio,
+        }
     }
 
     #[test]
@@ -189,8 +196,7 @@ mod tests {
             sample(2000, 0.011),
         ])
         .expect("samples");
-        let evaluation =
-            evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
+        let evaluation = evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
         assert!(!evaluation.degraded);
         assert_eq!(evaluation.degraded_to, None);
         assert_eq!(evaluation.median_overhead_ratio, 0.011);
@@ -207,8 +213,7 @@ mod tests {
             sample(2000, 0.20), // max outlier must not become the verdict
         ])
         .expect("samples");
-        let evaluation =
-            evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
+        let evaluation = evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
         assert!(evaluation.degraded);
         assert_eq!(evaluation.degraded_to, Some(ObservationLevel::L0));
         assert_eq!(evaluation.median_overhead_ratio, 0.06);
@@ -218,32 +223,22 @@ mod tests {
     #[test]
     fn exactly_at_threshold_does_not_degrade() {
         // "exceeds" is strict.
-        let samples = OverheadSamples::new(vec![
-            sample(0, 0.03),
-            sample(1000, 0.03),
-        ])
-        .expect("samples");
-        let evaluation =
-            evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
+        let samples =
+            OverheadSamples::new(vec![sample(0, 0.03), sample(1000, 0.03)]).expect("samples");
+        let evaluation = evaluate(&samples, ObservationLevel::L1, 0.03, BASELINE_WINDOW_MS);
         assert!(!evaluation.degraded);
     }
 
     #[test]
     fn median_of_even_counts_interpolates() {
-        let samples = OverheadSamples::new(vec![
-            sample(0, 0.02),
-            sample(1000, 0.04),
-        ])
-        .expect("samples");
+        let samples =
+            OverheadSamples::new(vec![sample(0, 0.02), sample(1000, 0.04)]).expect("samples");
         assert_eq!(samples.median_ratio(), 0.03);
     }
 
     #[test]
     fn nonsense_samples_are_refused() {
-        assert_eq!(
-            OverheadSamples::new(vec![]),
-            Err(BaselineError::NoSamples)
-        );
+        assert_eq!(OverheadSamples::new(vec![]), Err(BaselineError::NoSamples));
         for bad in [f64::NAN, f64::INFINITY, -0.01, 1.5] {
             assert!(matches!(
                 OverheadSamples::new(vec![sample(0, bad)]),
@@ -254,35 +249,34 @@ mod tests {
 
     #[test]
     fn adr_ladder_steps_down_and_stops_at_the_floor() {
-        assert_eq!(degrade_level(ObservationLevel::L2), Some(ObservationLevel::L1));
-        assert_eq!(degrade_level(ObservationLevel::L1), Some(ObservationLevel::L0));
+        assert_eq!(
+            degrade_level(ObservationLevel::L2),
+            Some(ObservationLevel::L1)
+        );
+        assert_eq!(
+            degrade_level(ObservationLevel::L1),
+            Some(ObservationLevel::L0)
+        );
         assert_eq!(degrade_level(ObservationLevel::L0), None);
 
         // At the floor, an over-threshold median still reports degraded —
         // with no further step, so the report cannot hide it.
-        let samples = OverheadSamples::new(vec![sample(0, 0.5)])
-            .expect("samples");
-        let evaluation =
-            evaluate(&samples, ObservationLevel::L0, 0.03, BASELINE_WINDOW_MS);
+        let samples = OverheadSamples::new(vec![sample(0, 0.5)]).expect("samples");
+        let evaluation = evaluate(&samples, ObservationLevel::L0, 0.03, BASELINE_WINDOW_MS);
         assert!(evaluation.degraded);
         assert_eq!(evaluation.degraded_to, None);
     }
 
     #[test]
     fn evaluation_and_levels_serialise_round_trip() {
-        let samples = OverheadSamples::new(vec![
-            sample(0, 0.01),
-            sample(1000, 0.04),
-        ])
-        .expect("samples");
-        let evaluation =
-            evaluate(&samples, ObservationLevel::L2, 0.03, BASELINE_WINDOW_MS);
+        let samples =
+            OverheadSamples::new(vec![sample(0, 0.01), sample(1000, 0.04)]).expect("samples");
+        let evaluation = evaluate(&samples, ObservationLevel::L2, 0.03, BASELINE_WINDOW_MS);
         let text = serde_yaml::to_string(&evaluation).expect("serialise");
         let back: BaselineEvaluation = serde_yaml::from_str(&text).expect("reparse");
         assert_eq!(back, evaluation);
 
-        let level: ObservationLevel =
-            serde_yaml::from_str("l0").expect("level");
+        let level: ObservationLevel = serde_yaml::from_str("l0").expect("level");
         assert_eq!(level, ObservationLevel::L0);
     }
 }

@@ -702,7 +702,10 @@ mod tests {
         let mut empty_target = Histogram::new(HdrParameters::frozen_v1()).unwrap();
         empty_target.merge_from(&a).expect("empty absorbs");
         assert_eq!(empty_target.total_count(), 1);
-        assert_eq!(empty_target.value_at_percentile(100.0), a.value_at_percentile(100.0));
+        assert_eq!(
+            empty_target.value_at_percentile(100.0),
+            a.value_at_percentile(100.0)
+        );
     }
 
     #[test]

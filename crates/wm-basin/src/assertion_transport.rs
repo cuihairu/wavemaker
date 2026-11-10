@@ -24,12 +24,9 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::assertions::{
-    inconclusive_no_show, AssertionProviderContract, AssertionRecord,
-    WindowContext,
+    inconclusive_no_show, AssertionProviderContract, AssertionRecord, WindowContext,
 };
-use crate::provider::{
-    decode_http_response, parse_url, HttpResponse, ProviderError,
-};
+use crate::provider::{decode_http_response, parse_url, HttpResponse, ProviderError};
 
 /// HTTP seam for the assertion boundary (unit-testable without sockets).
 pub trait AssertionHttpTransport {
@@ -51,14 +48,10 @@ impl AssertionHttpTransport for TcpPostTransport {
         let stream = match self.timeout {
             Some(timeout) => {
                 let resolved = std::net::ToSocketAddrs::to_socket_addrs(&addr)
-                    .map_err(|err| {
-                        ProviderError::Unreachable(format!("{addr}: {err}"))
-                    })?
+                    .map_err(|err| ProviderError::Unreachable(format!("{addr}: {err}")))?
                     .next()
                     .ok_or_else(|| {
-                        ProviderError::Unreachable(format!(
-                            "{addr}: no address resolved"
-                        ))
+                        ProviderError::Unreachable(format!("{addr}: no address resolved"))
                     })?;
                 TcpStream::connect_timeout(&resolved, timeout)
             }
@@ -154,10 +147,7 @@ impl HttpAssertionProvider {
         }
     }
 
-    pub fn with_clock(
-        mut self,
-        clock: Box<dyn Fn() -> String + Send + Sync>,
-    ) -> Self {
+    pub fn with_clock(mut self, clock: Box<dyn Fn() -> String + Send + Sync>) -> Self {
         self.clock = clock;
         self
     }
@@ -242,9 +232,7 @@ impl AssertionProviderContract for HttpAssertionProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assertions::{
-        AssertionStatus, EvidenceKind, EvidenceRef, RecordWindow, Trigger,
-    };
+    use crate::assertions::{AssertionStatus, EvidenceKind, EvidenceRef, RecordWindow, Trigger};
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
 
@@ -405,31 +393,30 @@ mod tests {
         drop(provider);
         let seen = seen.borrow();
         assert_eq!(seen.len(), 1);
-        let body: serde_json::Value =
-            serde_json::from_str(&seen[0]).expect("body is json");
+        let body: serde_json::Value = serde_json::from_str(&seen[0]).expect("body is json");
         assert_eq!(body["name"], "dupes");
         assert_eq!(body["params"]["endpoint"], "http://gm.internal/audit");
         assert_eq!(body["window_context"]["swell_id"], "sw-1");
         assert_eq!(body["window_context"]["trigger"], "after_scenario");
-        assert_eq!(
-            body["window_context"]["window_start_unix_ms"], 1_000
-        );
+        assert_eq!(body["window_context"]["window_start_unix_ms"], 1_000);
     }
 
     #[test]
     fn completed_fail_results_pass_through_untouched() {
-        let mut record: AssertionRecord =
-            serde_json::from_str(&pass_json("dupes")).expect("json");
+        let mut record: AssertionRecord = serde_json::from_str(&pass_json("dupes")).expect("json");
         record.status = AssertionStatus::Fail;
-        record.message =
-            Some("3 duplicate role pairs found for accounts 1042,1087,2210".into());
+        record.message = Some("3 duplicate role pairs found for accounts 1042,1087,2210".into());
         let url = serve_one(
             "200 OK".to_string(),
             serde_json::to_string(&record).expect("json"),
         );
         let provider = provider_with(&url, Box::new(TcpPostTransport { timeout: None }));
         let returned = provider.execute("dupes", &params(), &context());
-        assert_eq!(returned.status, AssertionStatus::Fail, "record: {returned:?}");
+        assert_eq!(
+            returned.status,
+            AssertionStatus::Fail,
+            "record: {returned:?}"
+        );
         assert_eq!(
             returned.message.as_deref(),
             Some("3 duplicate role pairs found for accounts 1042,1087,2210")
@@ -439,7 +426,10 @@ mod tests {
 
     #[test]
     fn non_200_is_inconclusive_with_verbatim_status() {
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(503, "upstream down"));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(503, "upstream down"),
+        );
         let record = provider.execute("dupes", &params(), &context());
         assert_eq!(record.status, AssertionStatus::Inconclusive);
         assert!(record
@@ -457,7 +447,10 @@ mod tests {
 
     #[test]
     fn malformed_body_is_inconclusive_never_pass() {
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(200, "<html>oops</html>"));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(200, "<html>oops</html>"),
+        );
         let record = provider.execute("dupes", &params(), &context());
         assert_eq!(record.status, AssertionStatus::Inconclusive);
         assert!(record
@@ -469,7 +462,10 @@ mod tests {
         // A fourth status ("skipped") is rejected by the closed enum and
         // lands here too.
         let fourth = pass_json("dupes").replace("\"pass\"", "\"skipped\"");
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(200, &fourth));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(200, &fourth),
+        );
         assert_eq!(
             provider.execute("dupes", &params(), &context()).status,
             AssertionStatus::Inconclusive
@@ -482,10 +478,10 @@ mod tests {
         let mut no_evidence: AssertionRecord =
             serde_json::from_str(&pass_json("dupes")).expect("json");
         no_evidence.evidence = vec![];
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(
-            200,
-            &serde_json::to_string(&no_evidence).expect("json"),
-        ));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(200, &serde_json::to_string(&no_evidence).expect("json")),
+        );
         assert_eq!(
             provider.execute("dupes", &params(), &context()).status,
             AssertionStatus::Inconclusive
@@ -495,17 +491,20 @@ mod tests {
         let mut no_stamp: AssertionRecord =
             serde_json::from_str(&pass_json("dupes")).expect("json");
         no_stamp.checked_at = String::new();
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(
-            200,
-            &serde_json::to_string(&no_stamp).expect("json"),
-        ));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(200, &serde_json::to_string(&no_stamp).expect("json")),
+        );
         assert_eq!(
             provider.execute("dupes", &params(), &context()).status,
             AssertionStatus::Inconclusive
         );
 
         // A record about a different assertion.
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(200, &pass_json("someone-else")));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(200, &pass_json("someone-else")),
+        );
         let record = provider.execute("dupes", &params(), &context());
         assert_eq!(record.status, AssertionStatus::Inconclusive);
         assert!(record
@@ -517,7 +516,10 @@ mod tests {
 
     #[test]
     fn unreachable_provider_is_inconclusive() {
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", unreachable_transport());
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            unreachable_transport(),
+        );
         let record = provider.execute("dupes", &params(), &context());
         assert_eq!(record.status, AssertionStatus::Inconclusive);
         assert!(record
@@ -546,17 +548,16 @@ mod tests {
         .with_clock(Box::new(|| "2026-11-10T00:09:59Z".into()));
         let record = provider.execute("dupes", &params(), &context());
         assert_eq!(record.status, AssertionStatus::Inconclusive);
-        assert!(record
-            .message
-            .as_ref()
-            .expect("message")
-            .contains("read:"));
+        assert!(record.message.as_ref().expect("message").contains("read:"));
     }
 
     #[test]
     fn long_error_bodies_are_truncated_not_flooded() {
         let flood = "x".repeat(10_000);
-        let provider = provider_with("http://gm.internal/audit/duplicate-roles", static_transport(500, &flood));
+        let provider = provider_with(
+            "http://gm.internal/audit/duplicate-roles",
+            static_transport(500, &flood),
+        );
         let record = provider.execute("dupes", &params(), &context());
         let message = record.message.as_ref().expect("message");
         assert!(message.contains("truncated"));

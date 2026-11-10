@@ -86,9 +86,13 @@ pub struct WorkerRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistrationDecision {
-    Accepted { generation: u64 },
+    Accepted {
+        generation: u64,
+    },
     /// §5.3: the reason is surfaced to the Worker, not swallowed.
-    Rejected { reason: String },
+    Rejected {
+        reason: String,
+    },
 }
 
 /// The Worker registry's restart-recovery snapshot (WM-0512). Every
@@ -328,8 +332,7 @@ impl WorkerRegistry {
         let mut inner = self.inner.lock().unwrap();
         match inner.workers.get_mut(worker_id) {
             Some(record)
-                if record.generation <= generation
-                    && record.state != WorkerState::Deregistered =>
+                if record.generation <= generation && record.state != WorkerState::Deregistered =>
             {
                 record.last_heartbeat_unix_s = Some(unix_now());
                 if record.state == WorkerState::LostContact {
@@ -429,11 +432,7 @@ impl WorkerRegistry {
     pub fn workers(&self) -> Vec<WorkerRecord> {
         let inner = self.inner.lock().unwrap();
         let mut records: Vec<WorkerRecord> = inner.workers.values().cloned().collect();
-        records.sort_by(|a, b| {
-            a.registration
-                .worker_id
-                .cmp(&b.registration.worker_id)
-        });
+        records.sort_by(|a, b| a.registration.worker_id.cmp(&b.registration.worker_id));
         records
     }
 
@@ -457,10 +456,7 @@ impl WorkerRegistry {
     /// existing sessions keep running (policy 2). A beat restoring
     /// Online reopens admission; leaving the mesh (Deregistered) or
     /// never joining it refuses new load outright.
-    pub fn admission_verdicts(
-        &self,
-        worker_ids: &[&str],
-    ) -> Vec<(String, AdmissionVerdict)> {
+    pub fn admission_verdicts(&self, worker_ids: &[&str]) -> Vec<(String, AdmissionVerdict)> {
         let inner = self.inner.lock().unwrap();
         let mut verdicts: Vec<(String, AdmissionVerdict)> = worker_ids
             .iter()
@@ -502,9 +498,7 @@ pub enum AdmissionVerdict {
     /// invalidation time names when the window closed. Existing
     /// sessions are untouched (policy 2), and admission reopens on a
     /// fresh beat.
-    Frozen {
-        invalidated_at_unix_s: u64,
-    },
+    Frozen { invalidated_at_unix_s: u64 },
     /// The worker is not part of the mesh (deregistered or unknown) —
     /// never admit load to a worker the controller does not see.
     NotInMesh,
@@ -542,7 +536,10 @@ mod tests {
                 )
             }
         );
-        assert!(registry.worker("w1").is_none(), "rejected workers are not registered");
+        assert!(
+            registry.worker("w1").is_none(),
+            "rejected workers are not registered"
+        );
     }
 
     #[test]
@@ -557,14 +554,16 @@ mod tests {
     #[test]
     fn registration_records_versions_and_assigns_monotonic_generations() {
         let registry = WorkerRegistry::new(1000, 1000 * 4).expect("lease config");
-        let g1 = registry
-            .register(registration("w1"))
-            .expect("accept");
-        let g2 = registry
-            .register(registration("w2"))
-            .expect("accept");
-        assert!(matches!(g1, RegistrationDecision::Accepted { generation: 1 }));
-        assert!(matches!(g2, RegistrationDecision::Accepted { generation: 2 }));
+        let g1 = registry.register(registration("w1")).expect("accept");
+        let g2 = registry.register(registration("w2")).expect("accept");
+        assert!(matches!(
+            g1,
+            RegistrationDecision::Accepted { generation: 1 }
+        ));
+        assert!(matches!(
+            g2,
+            RegistrationDecision::Accepted { generation: 2 }
+        ));
         let record = registry.worker("w1").expect("record");
         assert_eq!(record.registration.adapter_version, "0.3");
         assert_eq!(record.registration.engine_version, "kbengine-1.2");
@@ -634,8 +633,7 @@ mod tests {
         {
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut("w1").expect("record");
-            record.last_heartbeat_unix_s =
-                Some(record.last_heartbeat_unix_s.unwrap() - 10_000);
+            record.last_heartbeat_unix_s = Some(record.last_heartbeat_unix_s.unwrap() - 10_000);
         }
         assert_eq!(registry.expired_workers(), vec!["w1".to_string()]);
         assert!(registry.mark_lost("w1"));
@@ -693,8 +691,7 @@ mod tests {
         {
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut("w1").expect("record");
-            record.last_heartbeat_unix_s =
-                Some(record.last_heartbeat_unix_s.unwrap() - 5);
+            record.last_heartbeat_unix_s = Some(record.last_heartbeat_unix_s.unwrap() - 5);
         }
         // Exactly TTL seconds of silence → expired.
         assert_eq!(registry.expired_workers(), vec!["w1".to_string()]);
@@ -713,8 +710,7 @@ mod tests {
             registry.heartbeat(id, generation);
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut(id).expect("record");
-            record.last_heartbeat_unix_s =
-                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+            record.last_heartbeat_unix_s = Some(record.last_heartbeat_unix_s.unwrap() - 60);
         }
         let lost = registry.sweep_expired();
         assert_eq!(lost, vec!["w-a".to_string(), "w-b".to_string()]);
@@ -749,7 +745,10 @@ mod tests {
         assert!(registry.deregister("w1"));
         assert!(!registry.deregister("w1"), "second leave is a no-op");
         assert!(!registry.deregister("ghost"));
-        assert!(!registry.heartbeat("w1", generation), "no beats after leave");
+        assert!(
+            !registry.heartbeat("w1", generation),
+            "no beats after leave"
+        );
         let record = registry.worker("w1").expect("record retained");
         assert_eq!(record.state, WorkerState::Deregistered);
         assert_eq!(registry.online_workers().len(), 0);
@@ -798,10 +797,7 @@ mod tests {
         // Online admits.
         assert_eq!(
             registry.admission_verdicts(&["w1"]),
-            vec![(
-                "w1".to_string(),
-                AdmissionVerdict::Admit
-            )]
+            vec![("w1".to_string(), AdmissionVerdict::Admit)]
         );
         assert_eq!(registry.admitting_workers(), vec!["w1".to_string()]);
 
@@ -810,8 +806,7 @@ mod tests {
         {
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut("w1").expect("record");
-            record.last_heartbeat_unix_s =
-                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+            record.last_heartbeat_unix_s = Some(record.last_heartbeat_unix_s.unwrap() - 60);
         }
         let invalidated_at = registry.sweep_expired();
         assert_eq!(invalidated_at, vec!["w1".to_string()]);
@@ -895,7 +890,10 @@ mod tests {
             .iter()
             .map(|record| record.registration.worker_id.clone())
             .collect();
-        assert_eq!(ids, vec!["w-a".to_string(), "w-b".to_string(), "w-c".to_string()]);
+        assert_eq!(
+            ids,
+            vec!["w-a".to_string(), "w-b".to_string(), "w-c".to_string()]
+        );
         let record_a = restored.worker("w-a").expect("record");
         assert_eq!(record_a.state, WorkerState::Online);
         assert_eq!(record_a.generation, generation_a);
@@ -914,7 +912,9 @@ mod tests {
 
         // A post-restart registration mints a fresh generation — no
         // collision with anything recorded.
-        let fresh = restored.register(registration("w-d")).expect("post-restart accept");
+        let fresh = restored
+            .register(registration("w-d"))
+            .expect("post-restart accept");
         match fresh {
             RegistrationDecision::Accepted { generation } => {
                 assert!(generation > generation_b);
@@ -937,8 +937,7 @@ mod tests {
         {
             let mut inner = registry.inner.lock().unwrap();
             let record = inner.workers.get_mut("w-a").expect("record");
-            record.last_heartbeat_unix_s =
-                Some(record.last_heartbeat_unix_s.unwrap() - 60);
+            record.last_heartbeat_unix_s = Some(record.last_heartbeat_unix_s.unwrap() - 60);
         }
         let snapshot = registry.snapshot();
 
@@ -946,11 +945,17 @@ mod tests {
         // Restore carries the recorded state verbatim: Online is not
         // force-flipped to LostContact at restart — that would be a
         // guess about whether the worker is still alive.
-        assert_eq!(restored.worker("w-a").expect("record").state, WorkerState::Online);
+        assert_eq!(
+            restored.worker("w-a").expect("record").state,
+            WorkerState::Online
+        );
         // The first lease sweep re-evaluates against the RECORDED beat
         // and the TTL: the stale worker is honestly declared lost.
         assert_eq!(restored.sweep_expired(), vec!["w-a".to_string()]);
-        assert_eq!(restored.worker("w-a").expect("record").state, WorkerState::LostContact);
+        assert_eq!(
+            restored.worker("w-a").expect("record").state,
+            WorkerState::LostContact
+        );
     }
 
     #[test]

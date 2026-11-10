@@ -77,9 +77,7 @@ impl MetricAggregate {
         match self {
             MetricAggregate::Gauge { catalog_metric, .. }
             | MetricAggregate::Counter { catalog_metric, .. }
-            | MetricAggregate::NotAggregated { catalog_metric, .. } => {
-                catalog_metric
-            }
+            | MetricAggregate::NotAggregated { catalog_metric, .. } => catalog_metric,
         }
     }
 }
@@ -198,9 +196,7 @@ pub fn aggregate_series(
         MetricKind::Histogram => MetricAggregate::NotAggregated {
             service: service.into(),
             catalog_metric: catalog_metric.into(),
-            reason:
-                "histogram needs merged histograms; scalars would fabricate percentiles"
-                    .into(),
+            reason: "histogram needs merged histograms; scalars would fabricate percentiles".into(),
         },
     }
 }
@@ -324,11 +320,19 @@ mod tests {
 
     #[test]
     fn counter_delta_computes_and_single_sample_has_none() {
-        let counter =
-            aggregate_series(&catalog(), "loginapp", "login.success_total",
-                &series(&[(0, 10.0), (1000, 15.0), (2000, 18.0)]));
+        let counter = aggregate_series(
+            &catalog(),
+            "loginapp",
+            "login.success_total",
+            &series(&[(0, 10.0), (1000, 15.0), (2000, 18.0)]),
+        );
         match counter {
-            MetricAggregate::Counter { delta, first_value, last_value, .. } => {
+            MetricAggregate::Counter {
+                delta,
+                first_value,
+                last_value,
+                ..
+            } => {
                 assert_eq!(first_value, 10.0);
                 assert_eq!(last_value, 18.0);
                 assert_eq!(delta, Some(8.0));
@@ -336,8 +340,12 @@ mod tests {
             other => panic!("expected counter aggregate, got {other:?}"),
         }
 
-        let single = aggregate_series(&catalog(), "loginapp",
-            "login.success_total", &series(&[(0, 3.0)]));
+        let single = aggregate_series(
+            &catalog(),
+            "loginapp",
+            "login.success_total",
+            &series(&[(0, 3.0)]),
+        );
         match single {
             MetricAggregate::Counter { delta, .. } => assert_eq!(delta, None),
             other => panic!("expected counter aggregate, got {other:?}"),
@@ -348,8 +356,12 @@ mod tests {
     fn counter_reset_is_recorded_not_clamped() {
         // A scrape across a counter reset shows a negative delta here;
         // clamping it silently would fabricate a larger increase.
-        let reset = aggregate_series(&catalog(), "loginapp",
-            "login.success_total", &series(&[(0, 100.0), (1000, 2.0)]));
+        let reset = aggregate_series(
+            &catalog(),
+            "loginapp",
+            "login.success_total",
+            &series(&[(0, 100.0), (1000, 2.0)]),
+        );
         match reset {
             MetricAggregate::Counter { delta, .. } => {
                 assert_eq!(delta, Some(-98.0));
@@ -376,16 +388,23 @@ mod tests {
 
     #[test]
     fn unknown_catalog_metric_and_empty_series_refuse_to_guess() {
-        let unknown = aggregate_series(&catalog(), "loginapp", "ghost.metric",
-            &series(&[(0, 1.0)]));
+        let unknown =
+            aggregate_series(&catalog(), "loginapp", "ghost.metric", &series(&[(0, 1.0)]));
         match unknown {
             MetricAggregate::NotAggregated { reason, .. } => {
                 assert!(reason.contains("catalog"), "{reason}");
             }
             other => panic!("expected NotAggregated, got {other:?}"),
         }
-        let empty = aggregate_series(&catalog(), "loginapp", "game.online",
-            &ProviderSeries { metric: Labels::new(), samples: vec![] });
+        let empty = aggregate_series(
+            &catalog(),
+            "loginapp",
+            "game.online",
+            &ProviderSeries {
+                metric: Labels::new(),
+                samples: vec![],
+            },
+        );
         assert!(matches!(empty, MetricAggregate::NotAggregated { .. }));
     }
 

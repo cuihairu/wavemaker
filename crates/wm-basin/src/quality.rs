@@ -48,9 +48,7 @@ impl QualityReport {
     pub fn missing_windows(&self) -> usize {
         self.findings
             .iter()
-            .filter(|finding| {
-                matches!(finding, QualityFinding::MissingWindow { .. })
-            })
+            .filter(|finding| matches!(finding, QualityFinding::MissingWindow { .. }))
             .count()
     }
 
@@ -74,17 +72,15 @@ pub fn detect_missing_windows(queries: &[CollectedQuery]) -> Vec<QualityFinding>
     let mut findings = Vec::new();
     for query in queries {
         match &query.outcome {
-            CollectedOutcome::Failed(error) => findings.push(
-                QualityFinding::MissingWindow {
-                    catalog_metric: query.catalog_metric.clone(),
-                    service: query.service.clone(),
-                    window: query.window,
-                    reason: error.clone(),
-                },
-            ),
+            CollectedOutcome::Failed(error) => findings.push(QualityFinding::MissingWindow {
+                catalog_metric: query.catalog_metric.clone(),
+                service: query.service.clone(),
+                window: query.window,
+                reason: error.clone(),
+            }),
             CollectedOutcome::Series(series) => {
-                let empty = series.is_empty()
-                    || series.iter().all(|entry| entry.samples.is_empty());
+                let empty =
+                    series.is_empty() || series.iter().all(|entry| entry.samples.is_empty());
                 if empty {
                     findings.push(QualityFinding::MissingWindow {
                         catalog_metric: query.catalog_metric.clone(),
@@ -136,13 +132,13 @@ pub fn detect_delayed_samples(
 }
 
 /// Full pass over a batch: missing windows first, then delayed samples.
-pub fn quality_report(
-    queries: &[CollectedQuery],
-    delay_threshold_ms: i64,
-) -> QualityReport {
+pub fn quality_report(queries: &[CollectedQuery], delay_threshold_ms: i64) -> QualityReport {
     let mut findings = detect_missing_windows(queries);
     findings.extend(detect_delayed_samples(queries, delay_threshold_ms));
-    QualityReport { findings, inspected: queries.len() }
+    QualityReport {
+        findings,
+        inspected: queries.len(),
+    }
 }
 
 #[cfg(test)]
@@ -180,9 +176,7 @@ mod tests {
     #[test]
     fn failed_query_is_a_missing_window_with_verbatim_reason() {
         let query = CollectedQuery {
-            outcome: CollectedOutcome::Failed(
-                "metric provider returned http status 503".into(),
-            ),
+            outcome: CollectedOutcome::Failed("metric provider returned http status 503".into()),
             ..ok_query(vec![], 0)
         };
         let findings = detect_missing_windows(&[query]);
@@ -196,10 +190,7 @@ mod tests {
             } => {
                 assert_eq!(catalog_metric, "login.online");
                 assert_eq!(service, "loginapp");
-                assert_eq!(
-                    reason,
-                    "metric provider returned http status 503"
-                );
+                assert_eq!(reason, "metric provider returned http status 503");
             }
             other => panic!("expected MissingWindow, got {other:?}"),
         }

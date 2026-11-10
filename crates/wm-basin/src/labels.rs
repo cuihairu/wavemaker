@@ -270,8 +270,7 @@ mod tests {
         let saturated: DataQualityLabel =
             serde_yaml::from_str("GeneratorSaturated").expect("parse");
         assert_eq!(saturated, DataQualityLabel::GeneratorSaturated);
-        let degraded: DataQualityLabel =
-            serde_yaml::from_str("ObserverDegraded").expect("parse");
+        let degraded: DataQualityLabel = serde_yaml::from_str("ObserverDegraded").expect("parse");
         assert_eq!(degraded, DataQualityLabel::ObserverDegraded);
 
         let quality = quality_report(&clean_batch(), 5000);

@@ -59,10 +59,7 @@ impl MetricMapping {
     /// Add a binding; duplicates (same service + catalog metric) are
     /// refused — a silent rebind would change a report's meaning without
     /// anyone noticing.
-    pub fn add_entry(
-        &mut self,
-        entry: MappingEntry,
-    ) -> Result<(), MappingError> {
+    pub fn add_entry(&mut self, entry: MappingEntry) -> Result<(), MappingError> {
         if entry.provider_query.trim().is_empty() {
             return Err(MappingError::EmptyQuery {
                 service: entry.service.clone(),
@@ -80,8 +77,7 @@ impl MetricMapping {
             return Err(MappingError::UnknownService(entry.service));
         }
         if self.entries.iter().any(|existing| {
-            existing.catalog_metric == entry.catalog_metric
-                && existing.service == entry.service
+            existing.catalog_metric == entry.catalog_metric && existing.service == entry.service
         }) {
             return Err(MappingError::DuplicateMapping {
                 service: entry.service,
@@ -121,14 +117,15 @@ impl MetricMapping {
     /// predicate Preflight (WM-0411) drives "The target topology is fully
     /// covered" with.
     pub fn covers(&self, service_id: &str) -> bool {
-        self.entries
-            .iter()
-            .any(|entry| entry.service == service_id)
+        self.entries.iter().any(|entry| entry.service == service_id)
     }
 
     pub fn covered_services(&self) -> Vec<String> {
-        let mut covered: Vec<String> =
-            self.entries.iter().map(|entry| entry.service.clone()).collect();
+        let mut covered: Vec<String> = self
+            .entries
+            .iter()
+            .map(|entry| entry.service.clone())
+            .collect();
         covered.sort();
         covered.dedup();
         covered
@@ -140,10 +137,7 @@ impl MetricMapping {
         topology.uncovered_services(|service| self.covers(&service.id))
     }
 
-    pub fn entries_by_service(
-        &self,
-        service_id: &str,
-    ) -> Vec<&MappingEntry> {
+    pub fn entries_by_service(&self, service_id: &str) -> Vec<&MappingEntry> {
         self.entries
             .iter()
             .filter(|entry| entry.service == service_id)
@@ -182,7 +176,10 @@ mod tests {
     fn topology_with(services: &[(&str, ServiceKind)]) -> Topology {
         let mut topology = Topology::default();
         topology
-            .add_host(Host { id: "host-a".into(), labels: Labels::new() })
+            .add_host(Host {
+                id: "host-a".into(),
+                labels: Labels::new(),
+            })
             .expect("host");
         for &(id, ref kind) in services {
             topology
@@ -218,7 +215,10 @@ mod tests {
             .expect("bind");
         let bound = &mapping.entries()[0];
         assert_eq!(bound.catalog_metric, "login.online");
-        assert_eq!(bound.provider_query, r#"kbengine_online{component="loginapp"}"#);
+        assert_eq!(
+            bound.provider_query,
+            r#"kbengine_online{component="loginapp"}"#
+        );
     }
 
     #[test]
@@ -290,7 +290,9 @@ mod tests {
         mapping
             .add_entry(entry("login.online", "loginapp", "kbengine_online"))
             .expect("add");
-        mapping.validate(&catalog, &topology).expect("valid mapping");
+        mapping
+            .validate(&catalog, &topology)
+            .expect("valid mapping");
     }
 
     #[test]
@@ -342,9 +344,7 @@ mod tests {
         let mapping = MetricMapping::default();
         assert!(matches!(
             mapping.validate(&catalog, &topology),
-            Err(MappingError::Topology(
-                TopologyError::UnknownHostRef(_, _)
-            ))
+            Err(MappingError::Topology(TopologyError::UnknownHostRef(_, _)))
         ));
     }
 

@@ -44,19 +44,13 @@ pub enum OnFail {
 pub enum TriggerSpec {
     /// After a named scenario completes; window = the scenario's actual
     /// start..end.
-    AfterScenario {
-        after_scenario: String,
-    },
+    AfterScenario { after_scenario: String },
     /// After a Worker/Backend recovery handshake completes (WM-0509's
     /// hook); window = fault injection start .. recovery completion.
-    AfterRecovery {
-        after_recovery: bool,
-    },
+    AfterRecovery { after_recovery: bool },
     /// Periodic probe during execution; probes only record — they never
     /// participate in instantaneous circuit breaking.
-    Periodic {
-        periodic: PeriodicInterval,
-    },
+    Periodic { periodic: PeriodicInterval },
 }
 
 /// The `periodic:` payload.
@@ -120,16 +114,12 @@ impl AssertionSpec {
                 TriggerSpec::AfterScenario { after_scenario }
                     if after_scenario.trim().is_empty() =>
                 {
-                    return Err(AssertionSpecError::EmptyScenario(
-                        self.name.clone(),
-                    ));
+                    return Err(AssertionSpecError::EmptyScenario(self.name.clone()));
                 }
                 TriggerSpec::Periodic {
                     periodic: PeriodicInterval { interval_s },
                 } if *interval_s == 0 => {
-                    return Err(AssertionSpecError::ZeroInterval(
-                        self.name.clone(),
-                    ));
+                    return Err(AssertionSpecError::ZeroInterval(self.name.clone()));
                 }
                 _ => {}
             }
@@ -419,17 +409,11 @@ timeout_s: 5
     fn spec_validation_refuses_broken_declarations() {
         let mut broken = spec();
         broken.name = " ".into();
-        assert_eq!(
-            broken.validate(),
-            Err(AssertionSpecError::EmptyName)
-        );
+        assert_eq!(broken.validate(), Err(AssertionSpecError::EmptyName));
 
         let mut broken = spec();
         broken.provider = "".into();
-        assert_eq!(
-            broken.validate(),
-            Err(AssertionSpecError::EmptyProvider)
-        );
+        assert_eq!(broken.validate(), Err(AssertionSpecError::EmptyProvider));
 
         let mut broken = spec();
         broken.when = vec![];
@@ -471,12 +455,10 @@ timeout_s: 5
             ("fail", AssertionStatus::Fail),
             ("inconclusive", AssertionStatus::Inconclusive),
         ] {
-            let parsed: AssertionStatus =
-                serde_yaml::from_str(text).expect("parse");
+            let parsed: AssertionStatus = serde_yaml::from_str(text).expect("parse");
             assert_eq!(parsed, status);
         }
-        let fourth: Result<AssertionStatus, _> =
-            serde_yaml::from_str::<AssertionStatus>("skipped");
+        let fourth: Result<AssertionStatus, _> = serde_yaml::from_str::<AssertionStatus>("skipped");
         assert!(fourth.is_err(), "no fourth implicit status may parse");
     }
 
@@ -501,10 +483,7 @@ timeout_s: 5
 
         let mut anonymous = context;
         anonymous.swell_id = " ".into();
-        assert_eq!(
-            anonymous.validate(),
-            Err(WindowContextError::EmptySwellId)
-        );
+        assert_eq!(anonymous.validate(), Err(WindowContextError::EmptySwellId));
     }
 
     #[test]
@@ -519,9 +498,7 @@ timeout_s: 5
                 end: "2026-11-10T00:05:00Z".into(),
             }),
             trigger: Some(Trigger::AfterScenario),
-            message: Some(
-                "3 duplicate role pairs found for accounts 1042,1087,2210".into(),
-            ),
+            message: Some("3 duplicate role pairs found for accounts 1042,1087,2210".into()),
             evidence: vec![
                 EvidenceRef {
                     kind: EvidenceKind::Artifact,
@@ -529,9 +506,8 @@ timeout_s: 5
                 },
                 EvidenceRef {
                     kind: EvidenceKind::Query,
-                    reference:
-                        "SELECT count(*) FROM roles GROUP BY account HAVING count(*)>1"
-                            .into(),
+                    reference: "SELECT count(*) FROM roles GROUP BY account HAVING count(*)>1"
+                        .into(),
                 },
             ],
         };
@@ -556,10 +532,7 @@ timeout_s: 5
             message: None,
             evidence: vec![],
         };
-        assert_eq!(
-            record.validate(),
-            Err(AssertionRecordError::NoEvidence)
-        );
+        assert_eq!(record.validate(), Err(AssertionRecordError::NoEvidence));
     }
 
     #[test]

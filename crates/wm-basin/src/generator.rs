@@ -91,19 +91,17 @@ fn fold_gauge_u64(values: impl Iterator<Item = Option<u64>>) -> Option<u64> {
 }
 
 fn fold_gauge_f64(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
-    values
-        .flatten()
-        .fold(None, |acc: Option<f64>, value| {
-            // NaN readings are refused at the fold: a NaN peak would lie
-            // about saturation either direction.
-            if !value.is_finite() {
-                return acc;
-            }
-            Some(match acc {
-                Some(current) if current >= value => current,
-                _ => value,
-            })
+    values.flatten().fold(None, |acc: Option<f64>, value| {
+        // NaN readings are refused at the fold: a NaN peak would lie
+        // about saturation either direction.
+        if !value.is_finite() {
+            return acc;
+        }
+        Some(match acc {
+            Some(current) if current >= value => current,
+            _ => value,
         })
+    })
 }
 
 fn fold_counter(values: impl Iterator<Item = Option<u64>>) -> Option<u64> {
@@ -137,13 +135,9 @@ pub fn aggregate(snapshots: &[WorkerSnapshot]) -> GeneratorAggregate {
         workers_reported: workers.len(),
         peak_cpu_ratio: fold_gauge_f64(snapshots.iter().map(|s| s.cpu_ratio)),
         peak_rss_bytes: fold_gauge_u64(snapshots.iter().map(|s| s.rss_bytes)),
-        peak_thread_count: fold_gauge_u64(
-            snapshots.iter().map(|s| s.thread_count),
-        ),
+        peak_thread_count: fold_gauge_u64(snapshots.iter().map(|s| s.thread_count)),
         peak_fd_count: fold_gauge_u64(snapshots.iter().map(|s| s.fd_count)),
-        peak_event_queue_length: fold_gauge_u64(
-            snapshots.iter().map(|s| s.event_queue_length),
-        ),
+        peak_event_queue_length: fold_gauge_u64(snapshots.iter().map(|s| s.event_queue_length)),
         max_control_channel_latency_ms: fold_gauge_f64(
             snapshots.iter().map(|s| s.control_channel_latency_ms),
         ),
@@ -156,15 +150,9 @@ pub fn aggregate(snapshots: &[WorkerSnapshot]) -> GeneratorAggregate {
         max_planned_actual_deviation_ms: fold_gauge_f64(
             snapshots.iter().map(|s| s.planned_actual_deviation_ms),
         ),
-        max_scheduler_lag_ms: fold_gauge_f64(
-            snapshots.iter().map(|s| s.scheduler_lag_ms),
-        ),
-        peak_actor_count: fold_gauge_u64(
-            snapshots.iter().map(|s| s.actor_count),
-        ),
-        peak_active_connections: fold_gauge_u64(
-            snapshots.iter().map(|s| s.active_connections),
-        ),
+        max_scheduler_lag_ms: fold_gauge_f64(snapshots.iter().map(|s| s.scheduler_lag_ms)),
+        peak_actor_count: fold_gauge_u64(snapshots.iter().map(|s| s.actor_count)),
+        peak_active_connections: fold_gauge_u64(snapshots.iter().map(|s| s.active_connections)),
         total_restarts,
         total_lost_contact_events: total_lost_contact,
     }
@@ -206,10 +194,7 @@ impl GeneratorAggregate {
     /// Evidence of generator saturation. Empty = no evidence; the report
     /// label (WM-0415's vocabulary) is derived from this, so a missing
     /// metric can never trigger saturation (missing != zero).
-    pub fn saturation_signals(
-        &self,
-        thresholds: &SaturationThresholds,
-    ) -> Vec<SaturationSignal> {
+    pub fn saturation_signals(&self, thresholds: &SaturationThresholds) -> Vec<SaturationSignal> {
         let mut signals = Vec::new();
         if let Some(cpu) = self.peak_cpu_ratio {
             if cpu > thresholds.max_cpu_ratio {
@@ -387,8 +372,7 @@ mod tests {
         let snapshots = vec![worker_a(), worker_b()];
         let text = serde_yaml::to_string(&snapshots).expect("serialise");
         assert!(text.contains("worker-b"));
-        let back: Vec<WorkerSnapshot> =
-            serde_yaml::from_str(&text).expect("reparse");
+        let back: Vec<WorkerSnapshot> = serde_yaml::from_str(&text).expect("reparse");
         assert_eq!(back, snapshots);
 
         let aggregate = aggregate(&snapshots);

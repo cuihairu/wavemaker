@@ -53,18 +53,27 @@ pub struct SourceClock {
 
 impl SourceClock {
     pub fn trusted(source: impl Into<String>) -> Self {
-        Self { source: source.into(), trusted_stamps: true, offset: None }
+        Self {
+            source: source.into(),
+            trusted_stamps: true,
+            offset: None,
+        }
     }
 
-    pub fn estimated(
-        source: impl Into<String>,
-        offset: ClockOffsetEstimate,
-    ) -> Self {
-        Self { source: source.into(), trusted_stamps: false, offset: Some(offset) }
+    pub fn estimated(source: impl Into<String>, offset: ClockOffsetEstimate) -> Self {
+        Self {
+            source: source.into(),
+            trusted_stamps: false,
+            offset: Some(offset),
+        }
     }
 
     pub fn unverified(source: impl Into<String>) -> Self {
-        Self { source: source.into(), trusted_stamps: false, offset: None }
+        Self {
+            source: source.into(),
+            trusted_stamps: false,
+            offset: None,
+        }
     }
 
     pub fn trust(&self) -> ClockTrust {
@@ -172,7 +181,10 @@ pub fn common_window(spans: &[TimelineSpan]) -> Option<TimelineSpan> {
         end = end.min(span.end_unix_ms);
     }
     if start < end {
-        Some(TimelineSpan { start_unix_ms: start, end_unix_ms: end })
+        Some(TimelineSpan {
+            start_unix_ms: start,
+            end_unix_ms: end,
+        })
     } else {
         None
     }
@@ -206,8 +218,7 @@ pub fn shape_alignment_offset(
         return None;
     }
     let len = anchor_curve.len();
-    let mut candidates: Vec<i64> =
-        (-(max_lag_steps as i64)..=(max_lag_steps as i64)).collect();
+    let mut candidates: Vec<i64> = (-(max_lag_steps as i64)..=(max_lag_steps as i64)).collect();
     candidates.sort_by_key(|lag| lag.unsigned_abs());
     let mut winner = candidates[0];
     let mut winner_score = f64::NEG_INFINITY;
@@ -247,8 +258,7 @@ mod tests {
 
     #[test]
     fn trusted_and_estimated_and_unverified_shift_differently() {
-        let mut alignment =
-            TimelineAlignment::new("swell-start", 1_000_000);
+        let mut alignment = TimelineAlignment::new("swell-start", 1_000_000);
         alignment.add_clock(SourceClock::trusted("controller"));
         alignment.add_clock(SourceClock::estimated(
             "prometheus",
@@ -299,9 +309,18 @@ mod tests {
     #[test]
     fn common_window_is_the_intersection() {
         let spans = vec![
-            TimelineSpan { start_unix_ms: 1000, end_unix_ms: 5000 },
-            TimelineSpan { start_unix_ms: 2000, end_unix_ms: 4000 },
-            TimelineSpan { start_unix_ms: 2500, end_unix_ms: 9000 },
+            TimelineSpan {
+                start_unix_ms: 1000,
+                end_unix_ms: 5000,
+            },
+            TimelineSpan {
+                start_unix_ms: 2000,
+                end_unix_ms: 4000,
+            },
+            TimelineSpan {
+                start_unix_ms: 2500,
+                end_unix_ms: 9000,
+            },
         ];
         let window = common_window(&spans).expect("overlap exists");
         assert_eq!(window.start_unix_ms, 2500);
@@ -311,14 +330,26 @@ mod tests {
 
         // No overlap -> no honest unified window.
         let disjoint = vec![
-            TimelineSpan { start_unix_ms: 0, end_unix_ms: 100 },
-            TimelineSpan { start_unix_ms: 500, end_unix_ms: 900 },
+            TimelineSpan {
+                start_unix_ms: 0,
+                end_unix_ms: 100,
+            },
+            TimelineSpan {
+                start_unix_ms: 500,
+                end_unix_ms: 900,
+            },
         ];
         assert!(common_window(&disjoint).is_none());
         // Touching-but-empty (end == start) is no window.
         let touching = vec![
-            TimelineSpan { start_unix_ms: 0, end_unix_ms: 100 },
-            TimelineSpan { start_unix_ms: 100, end_unix_ms: 200 },
+            TimelineSpan {
+                start_unix_ms: 0,
+                end_unix_ms: 100,
+            },
+            TimelineSpan {
+                start_unix_ms: 100,
+                end_unix_ms: 200,
+            },
         ];
         assert!(common_window(&touching).is_none());
     }
@@ -338,9 +369,7 @@ mod tests {
         };
         let anchor = bump(20.0);
         let source = bump(15.0); // source's stamp of the bump is 5 steps early
-        let estimate =
-            shape_alignment_offset(&anchor, &source, step_ms, 10)
-                .expect("estimate");
+        let estimate = shape_alignment_offset(&anchor, &source, step_ms, 10).expect("estimate");
         assert_eq!(estimate.method, "shape-alignment");
         assert_eq!(estimate.offset_ms, 5 * step_ms);
     }
@@ -350,10 +379,8 @@ mod tests {
         let flat = vec![0.0; 16];
         // Two flat curves: no information; whatever comes back must be
         // stable across calls (deterministic tie-break).
-        let first =
-            shape_alignment_offset(&flat, &flat, 1000, 3).expect("estimate");
-        let second =
-            shape_alignment_offset(&flat, &flat, 1000, 3).expect("estimate");
+        let first = shape_alignment_offset(&flat, &flat, 1000, 3).expect("estimate");
+        let second = shape_alignment_offset(&flat, &flat, 1000, 3).expect("estimate");
         assert_eq!(first, second);
     }
 
@@ -379,8 +406,7 @@ mod tests {
         ));
         let text = serde_yaml::to_string(&alignment).expect("serialise");
         assert!(text.contains("shape-alignment"));
-        let back: TimelineAlignment =
-            serde_yaml::from_str(&text).expect("reparse");
+        let back: TimelineAlignment = serde_yaml::from_str(&text).expect("reparse");
         assert_eq!(back, alignment);
 
         let stamp = alignment.to_timeline("prometheus", 1000);

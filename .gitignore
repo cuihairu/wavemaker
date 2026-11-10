@@ -28,6 +28,12 @@ docs/node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 
+# Desktop dashboard (WM-0601)
+desktop/web/node_modules/
+desktop/web/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
 # Python tooling
 __pycache__/
 .pytest_cache/

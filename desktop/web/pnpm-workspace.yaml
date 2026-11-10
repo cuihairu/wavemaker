@@ -1,0 +1,4 @@
+# pnpm 12 build-script approvals. esbuild's postinstall is required for
+# the Vite/Vitest binaries; without this pnpm refuses to run it.
+allowBuilds:
+  esbuild: true

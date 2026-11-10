@@ -1,0 +1,23 @@
+[package]
+name = "wavemaker-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Wavemaker desktop dashboard (Tauri shell)"
+license = "Apache-2.0"
+
+# Standalone crate: carve this app out of the enclosing root workspace so
+# the core `cargo test --workspace` / clippy gate never drags in Tauri.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# The webview calls the controller REST API through this plugin, so the
+# request is made from the Rust side and never trips webview CORS.
+tauri-plugin-http = "2"
+
+[lib]
+name = "wavemaker_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]

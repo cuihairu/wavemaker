@@ -7,6 +7,7 @@ import {
   timelinePath,
   strideSamples,
 } from '../api.js'
+import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 
 const run = (overrides = {}) => ({
   run_id: 'r1',
@@ -136,5 +137,43 @@ describe('strideSamples', () => {
     const pts = [{ t_secs: 1 }, { t_secs: 2 }]
     expect(strideSamples(pts, 10)).toEqual([{ t_secs: 1 }, { t_secs: 2 }])
     expect(strideSamples([{ t_secs: 0 }], 10)).toEqual([{ t_secs: 0 }])
+  })
+})
+
+describe('metric families', () => {
+  it('lists every generator metric the engine defines, in its field order', () => {
+    expect(GENERATOR_METRICS.map((m) => m.metric)).toEqual([
+      'cpu_ratio',
+      'rss_bytes',
+      'thread_count',
+      'fd_count',
+      'event_queue_length',
+      'control_channel_latency_ms',
+      'dropped_event_reports',
+      'metrics_reporting_latency_ms',
+      'planned_actual_deviation_ms',
+      'scheduler_lag_ms',
+      'actor_count',
+      'active_connections',
+      'restarts',
+      'lost_contact_events',
+    ])
+  })
+
+  it('carries a kind, an aggregation rule and a unit for every family', () => {
+    const valid = new Set(['peak', 'sum', 'max'])
+    for (const m of GENERATOR_METRICS) {
+      expect(m.kind).toBeTruthy()
+      expect(valid).toContain(m.aggregate)
+      expect(m.unit).toBeTruthy()
+    }
+  })
+
+  it('lists the server aggregation rule per catalog kind', () => {
+    expect(SERVER_METRICS.map((s) => s.kind)).toEqual(['gauge', 'counter', 'histogram'])
+    for (const s of SERVER_METRICS) {
+      expect(s.aggregate).toBeTruthy()
+      expect(s.note).toBeTruthy()
+    }
   })
 })

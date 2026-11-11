@@ -5,6 +5,8 @@ import SwellListView from '../views/SwellListView.vue'
 import SwellDetailView from '../views/SwellDetailView.vue'
 import StatusView from '../views/StatusView.vue'
 import SpectrumView from '../views/SpectrumView.vue'
+import MetricsView from '../views/MetricsView.vue'
+import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { routes } from '../router.js'
 
 // Mock only the shell boundary (network call + Tauri commands); the
@@ -260,6 +262,73 @@ describe('SpectrumView', () => {
     await wrapper.find('[data-test="load"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="error"]').text()).toContain('cannot read /nope')
+  })
+})
+
+describe('MetricsView', () => {
+  const statusPayload = {
+    status: 'running',
+    protocol_version: 1,
+    worker_count: 2,
+    expired_workers: [],
+    workers: [
+      { worker_id: 'w-a', generation: 1, capabilities: ['native'] },
+      { worker_id: 'w-b', generation: 1, capabilities: ['native'] },
+    ],
+    runs,
+  }
+
+  it('renders the live summary and every engine-defined metric family honestly', async () => {
+    fetchStatus.mockResolvedValue(statusPayload)
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="backend-state"]').text()).toContain('running')
+    expect(wrapper.find('[data-test="worker-count"]').text()).toBe('2')
+    expect(wrapper.find('[data-test="run-count"]').text()).toBe('3')
+    // Generator: one row per engine metric, each source honestly unwired.
+    const genRows = wrapper.findAll('[data-test="generator-metric-row"]')
+    expect(genRows).toHaveLength(GENERATOR_METRICS.length)
+    expect(genRows[0].text()).toContain('cpu_ratio')
+    expect(genRows[0].text()).toContain('Not wired')
+    expect(genRows[11].text()).toContain('active_connections')
+    // Server: one row per catalog kind.
+    const srvRows = wrapper.findAll('[data-test="server-metric-row"]')
+    expect(srvRows).toHaveLength(SERVER_METRICS.length)
+    expect(srvRows[0].text()).toContain('gauge')
+    expect(srvRows[0].text()).toContain('Not wired')
+  })
+
+  it('explains why no curves are drawn, without fabricating a data source', async () => {
+    fetchStatus.mockResolvedValue(statusPayload)
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    const note = wrapper.find('[data-test="unwired-note"]').text()
+    expect(note).toContain('no metrics endpoint')
+    expect(note).toContain('WM-0412')
+    expect(note).toContain('nothing is fabricated')
+    // No <svg> chart is rendered when there is no series to plot.
+    expect(wrapper.findAll('svg')).toHaveLength(0)
+  })
+
+  it('renders the summary even when no workers are registered', async () => {
+    fetchStatus.mockResolvedValue({ ...statusPayload, worker_count: 0, workers: [] })
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="worker-count"]').text()).toBe('0')
+  })
+
+  it('surfaces a controller error by name', async () => {
+    let rejectStatus
+    fetchStatus.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectStatus = reject })
+    )
+    const wrapper = mount(MetricsView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    rejectStatus(new Error('controller_status_failed: 500'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wrapper.find('[data-test="error"]').text()).toContain('controller_status_failed')
   })
 })
 

@@ -84,7 +84,7 @@ jobs:
             echo "commit:   ${GITHUB_SHA}"
             echo "verify:   ./wavemaker-${{ matrix.name }} --version"
             echo "caveat:   unsigned binary — SmartScreen/Gatekeeper may warn"
-          } > "dist/PLATFORM-NOTES-${{ matrix.name }}.txt"
+          } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.name }}

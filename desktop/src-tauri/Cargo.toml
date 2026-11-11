@@ -23,6 +23,14 @@ tauri = { version = "2", features = [] }
 # The webview calls the controller REST API through this plugin, so the
 # request is made from the Rust side and never trips webview CORS.
 tauri-plugin-http = "2"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# Spectrum validation reuses the same engine as `wm validate` (wm-core)
+# so the desktop report can never drift from the CLI.
+wm-core = { path = "../../crates/wm-core" }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lib]
 name = "wavemaker_desktop_lib"

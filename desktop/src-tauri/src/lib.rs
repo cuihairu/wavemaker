@@ -2,12 +2,21 @@
 //!
 //! A thin Tauri host: the native window renders the Vue dashboard and
 //! the HTTP plugin lets the webview reach the controller REST API
-//! (`/api/v1/status`) without tripping webview CORS.
+//! (`/api/v1/status`) without tripping webview CORS. Spectrum editing
+//! (WM-0603) goes through local commands that reuse wm-core's
+//! validation so the report matches `wm validate` exactly.
+
+mod spectrum;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
+        .invoke_handler(tauri::generate_handler![
+            spectrum::validate_spectrum,
+            spectrum::load_spectrum_file,
+            spectrum::save_spectrum_file,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the wavemaker desktop application");
 }

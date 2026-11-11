@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { deriveSwells, formatStates, deriveWorkerRows } from '../api.js'
+import {
+  deriveSwells,
+  formatStates,
+  deriveWorkerRows,
+  summarizeIssues,
+} from '../api.js'
 
 const run = (overrides = {}) => ({
   run_id: 'r1',
@@ -82,5 +87,18 @@ describe('deriveWorkerRows', () => {
       expired_workers: [],
     })
     expect(rows.map((r) => r.worker_id)).toEqual(['w-a', 'w-b', 'w-c'])
+  })
+})
+
+describe('summarizeIssues', () => {
+  it('counts severities with singular/plural forms', () => {
+    const issues = [
+      { severity: 'error' },
+      { severity: 'error' },
+      { severity: 'warning' },
+    ]
+    expect(summarizeIssues(issues)).toBe('2 errors, 1 warning')
+    expect(summarizeIssues([{ severity: 'error' }])).toBe('1 error, 0 warnings')
+    expect(summarizeIssues([])).toBe('0 errors, 0 warnings')
   })
 })

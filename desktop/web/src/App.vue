@@ -9,6 +9,7 @@
       <nav>
         <RouterLink to="/">Swells</RouterLink>
         <RouterLink to="/status">Status</RouterLink>
+        <RouterLink to="/spectrum">Spectrum</RouterLink>
       </nav>
     </header>
     <RouterView />

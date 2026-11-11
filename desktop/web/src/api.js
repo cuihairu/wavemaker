@@ -6,6 +6,7 @@
 // global fetch so the module stays testable.
 
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 
 export const CONTROLLER_URL =
   import.meta.env.VITE_CONTROLLER_URL || 'http://127.0.0.1:7600'
@@ -69,4 +70,29 @@ export function deriveWorkerRows(status) {
   return (status.workers || [])
     .map((worker) => ({ ...worker, expired: expired.has(worker.worker_id) }))
     .sort((a, b) => a.worker_id.localeCompare(b.worker_id))
+}
+
+/// Invoke a Tauri command defined in the desktop shell (WM-0603).
+/// Outside Tauri (vitest / a plain browser) it rejects with a named
+/// error so callers render it like any other failure.
+async function desktopInvoke(cmd, args) {
+  if (!inTauri) {
+    throw new Error('desktop_unavailable')
+  }
+  return tauriInvoke(cmd, args)
+}
+
+/// Spectrum file access goes through shell commands that read/write the
+/// file from the Rust side; validation reuses wm-core's `wm validate`
+/// engine, so the report matches the CLI exactly.
+export const loadSpectrum = (path) => desktopInvoke('load_spectrum_file', { path })
+export const saveSpectrum = (path, content) =>
+  desktopInvoke('save_spectrum_file', { path, content })
+export const validateSpectrum = (content) => desktopInvoke('validate_spectrum', { content })
+
+/// Deterministic issue count: `1 error, 2 warnings`.
+export function summarizeIssues(issues) {
+  const errors = issues.filter((i) => i.severity === 'error').length
+  const warnings = issues.filter((i) => i.severity === 'warning').length
+  return `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`
 }

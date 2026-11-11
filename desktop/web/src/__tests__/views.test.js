@@ -4,16 +4,24 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SwellListView from '../views/SwellListView.vue'
 import SwellDetailView from '../views/SwellDetailView.vue'
 import StatusView from '../views/StatusView.vue'
+import SpectrumView from '../views/SpectrumView.vue'
 import { routes } from '../router.js'
 
-// Mock only the network call; the pure derivation helpers stay real so
-// the views are exercised end to end over real grouping.
+// Mock only the shell boundary (network call + Tauri commands); the
+// pure derivation helpers stay real so the views are exercised end to
+// end over real grouping.
 vi.mock('../api.js', async (importOriginal) => {
   const actual = await importOriginal()
-  return { ...actual, fetchStatus: vi.fn() }
+  return {
+    ...actual,
+    fetchStatus: vi.fn(),
+    loadSpectrum: vi.fn(),
+    saveSpectrum: vi.fn(),
+    validateSpectrum: vi.fn(),
+  }
 })
 
-import { fetchStatus } from '../api.js'
+import { fetchStatus, loadSpectrum, saveSpectrum, validateSpectrum } from '../api.js'
 
 const runs = [
   { run_id: 'r1', swell_id: 'sw-1', spectrum_path: 'a.yaml', state: 'Created', created_at: 1000 },
@@ -155,5 +163,95 @@ describe('StatusView', () => {
     rejectStatus(new Error('controller_status_failed: 500'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(wrapper.find('[data-test="error"]').text()).toContain('controller_status_failed')
+  })
+})
+
+describe('SpectrumView', () => {
+  const YAML = 'arrival:\n  ramp:\n    from_per_second: 1\n'
+
+  it('loads a spectrum file into the editor', async () => {
+    loadSpectrum.mockResolvedValue(YAML)
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="path-input"]').setValue('/tmp/spectrum.yaml')
+    await wrapper.find('[data-test="load"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="editor"]').element.value).toBe(YAML)
+    expect(wrapper.find('[data-test="error"]').exists()).toBe(false)
+  })
+
+  it('renders validation issues from the wm-core report verbatim', async () => {
+    validateSpectrum.mockResolvedValue({
+      ok: false,
+      parse_error: null,
+      issues: [
+        {
+          severity: 'error',
+          code: 'E_POLICY_MISSING',
+          field: 'saturation_policy',
+          message: 'concurrency.max is set but saturation_policy is missing',
+        },
+        {
+          severity: 'warning',
+          code: 'W_TARGET_NAIVE_LITTLE_DEVIATION',
+          field: 'concurrency.target',
+          message: 'naive λ·W deviates',
+        },
+      ],
+    })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="editor"]').setValue(YAML)
+    await wrapper.find('[data-test="validate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="issue-summary"]').text()).toBe('1 error, 1 warning')
+    const issues = wrapper.findAll('[data-test="issue"]')
+    expect(issues).toHaveLength(2)
+    expect(issues[0].text()).toContain('E_POLICY_MISSING')
+    expect(issues[0].text()).toContain('saturation_policy')
+    expect(wrapper.find('[data-test="issue-severity"]').text()).toBe('error')
+    expect(wrapper.find('[data-test="valid"]').exists()).toBe(false)
+  })
+
+  it('shows a valid config without hiding warnings', async () => {
+    validateSpectrum.mockResolvedValue({
+      ok: true,
+      parse_error: null,
+      issues: [{ severity: 'warning', code: 'W_X', field: 'f', message: 'm' }],
+    })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="validate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="valid"]').text()).toBe('Config is valid.')
+    expect(wrapper.find('[data-test="issue-summary"]').text()).toBe('0 errors, 1 warning')
+  })
+
+  it('surfaces a parse error from the shell validator', async () => {
+    validateSpectrum.mockResolvedValue({
+      ok: false,
+      parse_error: 'invalid YAML at line 1',
+      issues: [],
+    })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="validate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="parse-error"]').text()).toContain('invalid YAML at line 1')
+    expect(wrapper.findAll('[data-test="issue"]')).toHaveLength(0)
+  })
+
+  it('confirms a save with the written path', async () => {
+    saveSpectrum.mockResolvedValue(undefined)
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="path-input"]').setValue('/tmp/spectrum.yaml')
+    await wrapper.find('[data-test="save"]').trigger('click')
+    await flushPromises()
+    expect(saveSpectrum).toHaveBeenCalledWith('/tmp/spectrum.yaml', '')
+    expect(wrapper.find('[data-test="saved"]').text()).toBe('saved /tmp/spectrum.yaml')
+  })
+
+  it('surfaces a named shell error when loading fails', async () => {
+    loadSpectrum.mockRejectedValue(new Error('cannot read /nope: not found'))
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="load"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="error"]').text()).toContain('cannot read /nope')
   })
 })

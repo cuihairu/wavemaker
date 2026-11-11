@@ -23,7 +23,15 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install protoc (proto codegen)
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        # The ubuntu apt mirror (azure.archive.ubuntu.com) has flaky DNS on
+        # hosted runners; the GitHub release CDN is the reliable path.
+        run: |
+          if ! command -v protoc >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/protoc.zip \
+              https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
+            sudo unzip -o /tmp/protoc.zip bin/protoc 'include/*' -d /usr/local
+          fi
+          protoc --version
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2

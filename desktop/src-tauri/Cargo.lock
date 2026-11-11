@@ -4460,6 +4460,7 @@ dependencies = [
  "tauri-plugin-http",
  "tempfile",
  "wm-core",
+ "wm-runtime",
 ]
 
 [[package]]
@@ -4960,6 +4961,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "wm-runtime"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "wm-core",
 ]
 
 [[package]]

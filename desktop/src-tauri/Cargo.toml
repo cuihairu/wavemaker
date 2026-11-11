@@ -26,8 +26,10 @@ tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 # Spectrum validation reuses the same engine as `wm validate` (wm-core)
-# so the desktop report can never drift from the CLI.
+# so the desktop report can never drift from the CLI. The load timeline
+# reuses wm-runtime's ArrivalPlan for the same reason.
 wm-core = { path = "../../crates/wm-core" }
+wm-runtime = { path = "../../crates/wm-runtime" }
 
 [dev-dependencies]
 tempfile = "3"

@@ -96,3 +96,33 @@ export function summarizeIssues(issues) {
   const warnings = issues.filter((i) => i.severity === 'warning').length
   return `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`
 }
+
+/// Load-timeline projection of a spectrum (WM-0604); the shell computes
+/// it with the engine's own ArrivalPlan math, never a JS reimplementation.
+export const timelineFor = (content) => desktopInvoke('load_timeline', { content })
+
+/// Scale one timeline series into a single-series SVG path (baseline at
+/// the bottom edge, series max at the top edge). Pure so chart geometry
+/// is testable without a webview.
+export function timelinePath(points, accessor, width, height) {
+  if (!points.length) return ''
+  const max = Math.max(...points.map(accessor))
+  const last = points[points.length - 1].t_secs
+  return points
+    .map((p, i) => {
+      const x = last === 0 ? 0 : (p.t_secs / last) * width
+      const y = max <= 0 ? height : height - (accessor(p) / max) * height
+      return `${i ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
+    })
+    .join('')
+}
+
+/// Every `stride`-th point plus the last one — the readable subset the
+/// table and hover dots show (labeled as such in the view).
+export function strideSamples(points, stride) {
+  if (points.length <= stride) return [...points]
+  const out = points.filter((_, i) => i % stride === 0)
+  const last = points[points.length - 1]
+  if (out[out.length - 1] !== last) out.push(last)
+  return out
+}

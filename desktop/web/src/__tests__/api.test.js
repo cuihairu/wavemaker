@@ -4,6 +4,8 @@ import {
   formatStates,
   deriveWorkerRows,
   summarizeIssues,
+  timelinePath,
+  strideSamples,
 } from '../api.js'
 
 const run = (overrides = {}) => ({
@@ -100,5 +102,39 @@ describe('summarizeIssues', () => {
     expect(summarizeIssues(issues)).toBe('2 errors, 1 warning')
     expect(summarizeIssues([{ severity: 'error' }])).toBe('1 error, 0 warnings')
     expect(summarizeIssues([])).toBe('0 errors, 0 warnings')
+  })
+})
+
+describe('timelinePath', () => {
+  const pts = (pairs) => pairs.map(([t, rate]) => ({ t_secs: t, rate_per_second: rate }))
+
+  it('maps the first point to bottom-left and the peak to top-right', () => {
+    const d = timelinePath(pts([[0, 1], [600, 10], [1200, 5]]), (p) => p.rate_per_second, 240, 100)
+    const [m, l1, l2] = d.split(/(?=[ML])/)
+    expect(m).toBe('M0.00,90.00')
+    expect(l1).toBe('L120.00,0.00')
+    expect(l2).toBe('L240.00,50.00')
+  })
+
+  it('renders empty input as an empty path', () => {
+    expect(timelinePath([], (p) => p.rate_per_second, 240, 100)).toBe('')
+  })
+
+  it('keeps an all-zero series flat on the baseline', () => {
+    const d = timelinePath(pts([[0, 0], [600, 0]]), (p) => p.rate_per_second, 240, 100)
+    expect(d).toBe('M0.00,100.00L240.00,100.00')
+  })
+})
+
+describe('strideSamples', () => {
+  it('keeps every stride-th point plus the last', () => {
+    const pts = Array.from({ length: 11 }, (_, i) => ({ t_secs: i }))
+    expect(strideSamples(pts, 10).map((p) => p.t_secs)).toEqual([0, 10])
+  })
+
+  it('returns all points when under the stride and does not duplicate the last', () => {
+    const pts = [{ t_secs: 1 }, { t_secs: 2 }]
+    expect(strideSamples(pts, 10)).toEqual([{ t_secs: 1 }, { t_secs: 2 }])
+    expect(strideSamples([{ t_secs: 0 }], 10)).toEqual([{ t_secs: 0 }])
   })
 })

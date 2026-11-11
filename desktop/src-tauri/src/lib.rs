@@ -7,6 +7,7 @@
 //! validation so the report matches `wm validate` exactly.
 
 mod spectrum;
+mod timeline;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,7 @@ pub fn run() {
             spectrum::validate_spectrum,
             spectrum::load_spectrum_file,
             spectrum::save_spectrum_file,
+            timeline::load_timeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the wavemaker desktop application");

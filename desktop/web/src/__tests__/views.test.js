@@ -18,10 +18,17 @@ vi.mock('../api.js', async (importOriginal) => {
     loadSpectrum: vi.fn(),
     saveSpectrum: vi.fn(),
     validateSpectrum: vi.fn(),
+    timelineFor: vi.fn(),
   }
 })
 
-import { fetchStatus, loadSpectrum, saveSpectrum, validateSpectrum } from '../api.js'
+import {
+  fetchStatus,
+  loadSpectrum,
+  saveSpectrum,
+  validateSpectrum,
+  timelineFor,
+} from '../api.js'
 
 const runs = [
   { run_id: 'r1', swell_id: 'sw-1', spectrum_path: 'a.yaml', state: 'Created', created_at: 1000 },
@@ -253,5 +260,42 @@ describe('SpectrumView', () => {
     await wrapper.find('[data-test="load"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="error"]').text()).toContain('cannot read /nope')
+  })
+})
+
+describe('SpectrumView timeline', () => {
+  const timelinePayload = {
+    ramp_duration_secs: 600,
+    horizon_secs: 1200,
+    points: [
+      { t_secs: 0, rate_per_second: 1, expected_arrivals: 0 },
+      { t_secs: 600, rate_per_second: 20, expected_arrivals: 3800.5 },
+      { t_secs: 1200, rate_per_second: 20, expected_arrivals: 15800.5 },
+    ],
+  }
+
+  it('renders two single-series charts and a sample table from the engine curve', async () => {
+    timelineFor.mockResolvedValue(timelinePayload)
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="timeline"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="timeline-window"]').text()).toContain('1200')
+    expect(wrapper.findAll('svg path[stroke]')).toHaveLength(2)
+    expect(wrapper.find('[data-test="rate-chart"]').text()).toContain('Arrival rate')
+    expect(wrapper.find('[data-test="cumulative-chart"]').text()).toContain('Expected arrivals')
+    // Strided table subset is labeled, never presented as complete.
+    expect(wrapper.find('[data-test="timeline-section"]').text()).toContain('every 10th sample')
+    expect(wrapper.find('[data-test="timeline-note"]').text()).toContain('No concurrency curve')
+  })
+
+  it('surfaces a named shell error when the timeline cannot be built', async () => {
+    timelineFor.mockRejectedValue(
+      new Error('cannot build timeline: spectrum has no arrival section')
+    )
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="timeline"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="error"]').text()).toContain('no arrival section')
+    expect(wrapper.find('[data-test="timeline-section"]').exists()).toBe(false)
   })
 })

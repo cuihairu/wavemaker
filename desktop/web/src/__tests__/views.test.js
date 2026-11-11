@@ -6,7 +6,9 @@ import SwellDetailView from '../views/SwellDetailView.vue'
 import StatusView from '../views/StatusView.vue'
 import SpectrumView from '../views/SpectrumView.vue'
 import MetricsView from '../views/MetricsView.vue'
+import ReportsView from '../views/ReportsView.vue'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
+import { REPORT_SECTIONS } from '../reports.js'
 import { routes } from '../router.js'
 
 // Mock only the shell boundary (network call + Tauri commands); the
@@ -323,6 +325,72 @@ describe('MetricsView', () => {
       () => new Promise((_resolve, reject) => { rejectStatus = reject })
     )
     const wrapper = mount(MetricsView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    rejectStatus(new Error('controller_status_failed: 500'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wrapper.find('[data-test="error"]').text()).toContain('controller_status_failed')
+  })
+})
+
+describe('ReportsView', () => {
+  const compareRunsPayload = [
+    { run_id: 'r1', swell_id: 'sw-1', spectrum_path: 'a.yaml', state: 'Created', created_at: 1000 },
+    { run_id: 'r2', swell_id: 'sw-2', spectrum_path: 'b.yaml', state: 'Completed', created_at: 2000 },
+    { run_id: 'r3', swell_id: 'sw-1', spectrum_path: 'c.yaml', state: 'Stopped', created_at: 500 },
+  ]
+
+  it('compares the two selected runs side by side from real run data', async () => {
+    fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    // Default selection is the first two runs (newest-first).
+    expect(wrapper.find('[data-test="head-a"]').text()).toBe('r1')
+    expect(wrapper.find('[data-test="head-b"]').text()).toBe('r2')
+    const rows = wrapper.findAll('[data-test="comparison-row"]')
+    expect(rows).toHaveLength(5)
+    expect(rows[0].text()).toContain('r1')
+    expect(rows[1].text()).toContain('sw-1')
+    expect(rows[2].text()).toContain('a.yaml')
+    expect(rows[3].text()).toContain('Created')
+    expect(rows[3].text()).toContain('Completed')
+  })
+
+  it('documents the report sections the engine defines', async () => {
+    fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    const sections = wrapper.findAll('[data-test="report-section"]')
+    expect(sections).toHaveLength(REPORT_SECTIONS.length)
+    expect(sections[0].text()).toContain('swell_id')
+  })
+
+  it('explains why report content is not compared, without fabricating it', async () => {
+    fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    const note = wrapper.find('[data-test="unwired-note"]').text()
+    expect(note).toContain('no report file is persisted')
+    expect(note).toContain('WM-0416')
+    expect(note).toContain('nothing is fabricated')
+  })
+
+  it('shows an honest empty state when there are no runs', async () => {
+    fetchStatus.mockResolvedValue({ runs: [] })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="empty"]').text()).toContain('No runs to compare')
+    // The honest note still explains the missing report content.
+    expect(wrapper.find('[data-test="unwired-note"]').text()).toContain('WM-0416')
+  })
+
+  it('surfaces a controller error by name', async () => {
+    let rejectStatus
+    fetchStatus.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectStatus = reject })
+    )
+    const wrapper = mount(ReportsView, {
       global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))

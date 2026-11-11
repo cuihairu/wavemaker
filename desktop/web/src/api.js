@@ -126,3 +126,12 @@ export function strideSamples(points, stride) {
   if (out[out.length - 1] !== last) out.push(last)
   return out
 }
+
+/// Pick the two runs to compare for the report comparison page (WM-0606),
+/// verbatim from the controller's run entries — the run records that
+/// would carry a report. Pure and deterministic: unknown ids yield `null`
+/// rather than a fabricated placeholder, so the view can say so honestly.
+export function compareRuns(runs, aId, bId) {
+  const byId = new Map((runs || []).map((r) => [r.run_id, r]))
+  return { a: byId.get(aId) || null, b: byId.get(bId) || null }
+}

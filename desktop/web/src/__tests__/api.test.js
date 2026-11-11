@@ -6,8 +6,10 @@ import {
   summarizeIssues,
   timelinePath,
   strideSamples,
+  compareRuns,
 } from '../api.js'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
+import { REPORT_SECTIONS } from '../reports.js'
 
 const run = (overrides = {}) => ({
   run_id: 'r1',
@@ -174,6 +176,54 @@ describe('metric families', () => {
     for (const s of SERVER_METRICS) {
       expect(s.aggregate).toBeTruthy()
       expect(s.note).toBeTruthy()
+    }
+  })
+})
+
+describe('compareRuns', () => {
+  const runs = [
+    run({ run_id: 'r1', swell_id: 'sw-1', state: 'Created' }),
+    run({ run_id: 'r2', swell_id: 'sw-2', state: 'Completed' }),
+    run({ run_id: 'r3', swell_id: 'sw-1', state: 'Stopped' }),
+  ]
+
+  it('returns the two selected runs verbatim by id', () => {
+    const pair = compareRuns(runs, 'r1', 'r3')
+    expect(pair.a.run_id).toBe('r1')
+    expect(pair.b.run_id).toBe('r3')
+    expect(pair.a.spectrum_path).toBe('spec.yaml')
+  })
+
+  it('yields null (never a fabricated placeholder) for an unknown id', () => {
+    const pair = compareRuns(runs, 'r1', 'ghost')
+    expect(pair.a.run_id).toBe('r1')
+    expect(pair.b).toBeNull()
+  })
+
+  it('returns nulls for an empty run list', () => {
+    expect(compareRuns([], 'a', 'b')).toEqual({ a: null, b: null })
+    expect(compareRuns(undefined, 'a', 'b')).toEqual({ a: null, b: null })
+  })
+})
+
+describe('report sections', () => {
+  it('mirrors the engine CorrelationReport fields in order', () => {
+    expect(REPORT_SECTIONS.map((s) => s.section)).toEqual([
+      'swell_id',
+      'timeline_anchor',
+      'effective_window',
+      'timeline',
+      'generator',
+      'saturation',
+      'server',
+      'quality',
+      'labels',
+    ])
+  })
+
+  it('describes every section', () => {
+    for (const s of REPORT_SECTIONS) {
+      expect(s.content).toBeTruthy()
     }
   })
 })

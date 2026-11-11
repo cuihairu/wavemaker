@@ -11,6 +11,7 @@
         <RouterLink to="/status">Status</RouterLink>
         <RouterLink to="/spectrum">Spectrum</RouterLink>
         <RouterLink to="/metrics">Metrics</RouterLink>
+        <RouterLink to="/reports">Reports</RouterLink>
       </nav>
     </header>
     <RouterView />

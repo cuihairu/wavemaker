@@ -9,10 +9,12 @@ title: Evaluation: Go / C++ / Python Third-Party SDK Completeness
 
 ## Question
 
-`docs/tech-stack.md:15-20` names five language surfaces and
-`docs/decisions.md:19-23` gives a decision for each. This evaluation
-inventories what actually exists in `engine-adapters/`, produces a
-completeness matrix, lists the gaps, and recommends a build priority.
+`docs/tech-stack.md:15-20` names six language surfaces (KBEngine Bridge,
+BigWorld Bridge, Python SDK, Lua SDK, C++ Adapter, Go SDK) and
+`docs/decisions.md:19-22` gives a decision for four of them (Lua, Python,
+C++, Go). This evaluation inventories what actually exists in
+`engine-adapters/`, produces a completeness matrix, lists the gaps, and
+recommends a build priority.
 
 ## What `engine-adapters/` actually contains (2026-11-12)
 
@@ -105,18 +107,18 @@ The existing surface a third-party SDK could plausibly sit on:
 | Control gRPC | `proto/control/v1/control_service.proto` | `ControlService` — 2 RPCs: `RegisterWorker`, `Heartbeat` |
 | Backend gRPC | `proto/backend/v1/backend_service.proto` | `BackendService` — 4 RPCs: `Handshake`, `ApplyPlan`, `Start`, `Stop` |
 | Protobuf contracts | `proto/{common,control,backend,engine,metrics}/v1/*.proto` | 5 files |
-| `ExecutionBackend` | `docs/backends.md:9-22` | 11 conceptual ops: `handshake`, `initialize`, `apply_plan`, `start`, `update_load`, `stop_admission`, `drain`, `shutdown`, `get_status`, `get_metrics`, `subscribe_events` |
+| `ExecutionBackend` | `docs/backends.md:13-23` | 11 conceptual ops: `handshake`, `initialize`, `apply_plan`, `start`, `update_load`, `stop_admission`, `drain`, `shutdown`, `get_status`, `get_metrics`, `subscribe_events` |
 | Native `Behavior` | `crates/wm-runtime/src/behavior.rs:100` | one method, `Box<dyn Behavior>`; no registry, no factory (WM-0610 finding) |
 
 Two of these rows are **not** SDK surfaces, and the distinction matters:
 
-- `ExecutionBackend` is a *conceptual* interface. `docs/backends.md:22` says
+- `ExecutionBackend` is a *conceptual* interface. `docs/backends.md:26` says
   explicitly that "backends are not required to implement them as the same RPC
   methods" and that the protocol must "explicitly describe unsupported
   capabilities". It is a yardstick for auditing an adapter, not an implementable
   contract.
 - The `BackendService` gRPC (4 RPCs) covers handshake/plan/start/stop, but
-  `StopAdmission` and `Drain` from `docs/backends.md:17-18` have no
+  `StopAdmission` and `Drain` from `docs/backends.md:18-19` have no
   corresponding RPC. `ExecutionBackend` therefore has 11 operations against
   which only 4 are exposed. The gap is structural, not accidental.
 
@@ -175,7 +177,7 @@ large it is:
    There is no way to *name* a behavior, in any language. This gate is shared
    with WM-0610 and applies to every scripted-SDK row in the matrix.
 2. **`BackendService` exposes 4 of 11 `ExecutionBackend` operations.** No RPC
-   exists for `StopAdmission` or `Drain` (`docs/backends.md:17-18`). Any
+   exists for `StopAdmission` or `Drain` (`docs/backends.md:18-19`). Any
    language's SDK that wishes to respect graceful teardown cannot today.
 3. **`update_load` has no surface at all.** It appears in the conceptual
    interface but in neither the gRPC services nor the bridge.
@@ -223,8 +225,8 @@ Priority order, with the reason each one is placed where it is:
 | # | Target | Rationale |
 |---|---|---|
 | 1 | **Python general SDK** | The only language with any production code (`bridge/` holds 14 modules plus `__init__.py`, with 10 test modules and 2 e2e drivers). The KBEngine path already demonstrates handshake, capability negotiation, framing, command dispatch and plan application — so the SDK is an *addition* (plan authoring + run read-back over REST) rather than a from-scratch effort. `docs/tech-stack.md:17` already says "provided later"; this is what "later" means. |
-| 2 | **Go SDK** | Second, on the strength of `docs/decisions.md:23` ("SDK possible in the future") and the fact that the repo already carries Go tooling (`tools/hdr_conformance/go/`), so the toolchain is not foreign. Wraps the same 5 REST endpoints. Deprioritized by `docs/tech-stack.md:20` ("outside the core") — so it follows Python rather than racing it. |
-| 3 | **C++ adapter** | Last, and only when a concrete need exists. `docs/tech-stack.md:19` says "as needed" and `docs/decisions.md:22` says "separate process or isolated shim" — that is a *design policy*, not a commitment. No engine in scope today needs it, and the isolated-shim form means it would be a *new* process boundary rather than an in-process binding. Build it when a named bot framework demands it. |
+| 2 | **Go SDK** | Second, on the strength of `docs/decisions.md:22` ("SDK possible in the future") and the fact that the repo already carries Go tooling (`tools/hdr_conformance/go/`), so the toolchain is not foreign. Wraps the same 5 REST endpoints. Deprioritized by `docs/tech-stack.md:20` ("outside the core") — so it follows Python rather than racing it. |
+| 3 | **C++ adapter** | Last, and only when a concrete need exists. `docs/tech-stack.md:19` says "as needed" and `docs/decisions.md:21` says "separate process or isolated shim" — that is a *design policy*, not a commitment. No engine in scope today needs it, and the isolated-shim form means it would be a *new* process boundary rather than an in-process binding. Build it when a named bot framework demands it. |
 | — | **Lua** | Deferred — decided separately in WM-0610 (`docs/evaluation/lua-behavior-sdk.md`): mlua chosen, not started, gated on the same behavior registry. |
 | — | **BigWorld** | **Undetermined.** Not a priority item. `docs/tech-stack.md:16` marks it "to be verified" and `docs/basin.md:114` requires source review plus measurement on a target version before any capability claim. Until an actual BigWorld SDK and test environment are identified, this row stays open by design. |
 
@@ -260,7 +262,7 @@ The blocking work is not language-specific:
    promoting unmeasured assumptions into adapter capabilities, and that rule
    is respected here.
 3. **`ExecutionBackend` is not an implementable interface.** It is a
-   self-described conceptual contract (`docs/backends.md:22`). Completeness
+   self-described conceptual contract (`docs/backends.md:26`). Completeness
    measured against it is a *gap measurement*, not a compliance test.
 4. **"Go" in the repo is not an SDK.** `tools/hdr_conformance/go/main.go` is a
    benchmarking tool. Counting it as Go SDK progress would be wrong; this
@@ -272,7 +274,7 @@ The blocking work is not language-specific:
 
 ## Read next
 
-- `docs/backends.md:9-22` — the 11-operation `ExecutionBackend` used as the
+- `docs/backends.md:13-23` — the 11-operation `ExecutionBackend` used as the
   yardstick here
 - `engine-adapters/kbengine/README.md` — layout, config injection, wire
   format, and the three engine constraints honoured

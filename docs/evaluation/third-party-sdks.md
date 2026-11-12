@@ -195,6 +195,22 @@ large it is:
    return JSON; no language binding generates from them. This is the actual
    blocking gap for the *third-party* SDK, and it is orthogonal to which
    language is chosen first.
+8. **The adapter's own README documents half of itself.**
+   `engine-adapters/kbengine/README.md` (86 lines) has a `Layout` block that
+   names only **5 of 14** bridge modules — `bootstrap`, `capability`,
+   `command_queue`, `engine_port`, `ipc_client` — omitting `bot_registry`,
+   `commands`, `connection_events`, `event_stream`, `handshake`, `lifecycle`,
+   `metrics`, `plans` and `process_metrics`. Its `tests/` subtree lists only
+   `test_bootstrap` and `test_ipc_client` against **10** test modules that
+   actually exist, and the block's per-module comments still cite `WM-0201` /
+   `WM-0202` as the newest work in those files — while the module docstrings in
+   the tree cite tasks through **`WM-0216`** (`plans.py`,
+   `connection_events.py`) and `bootstrap.py` alone spans `WM-0201` →
+   `WM-0215`. To be precise: the README's *prose* is current (lines 84-86
+   reference `WM-0216` / `WM-0217`), so this is not a stale document — it is a
+   **stale diagram**. The authoritative `Layout` block, which is what a
+   newcomer reads first, depicts an earlier state of the tree and is the
+   specific artifact a completeness review should flag for refresh.
 
 ## Recommendation
 

@@ -7,7 +7,11 @@
 //! ordering as `wm validate`).
 
 use serde::Serialize;
+use tauri::State;
 use wm_core::spectrum::{Severity, SpectrumConfig};
+
+use crate::authz::Action;
+use crate::users::AuthzState;
 
 /// One explainable validation issue, serialized for the webview.
 #[derive(Debug, PartialEq, Serialize)]
@@ -68,9 +72,22 @@ pub fn load_spectrum_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))
 }
 
+/// Saving a spectrum is `edit_config` in the ADR-009 matrix — admin
+/// only. The gate lives HERE, on the shell command, because the Rust
+/// side is the trust boundary; the UI's disabled buttons are presentation
+/// only. Reading (load) stays open to every logged-in role.
 #[tauri::command]
-pub fn save_spectrum_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, content.as_bytes()).map_err(|e| format!("cannot write {path}: {e}"))
+pub fn save_spectrum_file(
+    state: State<'_, AuthzState>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    crate::users::authorize(&state, Action::EditConfig)?;
+    write_spectrum_file(&path, &content)
+}
+
+fn write_spectrum_file(path: &str, content: &str) -> Result<(), String> {
+    std::fs::write(path, content).map_err(|e| format!("cannot write {path}: {e}"))
 }
 
 #[cfg(test)]
@@ -124,7 +141,7 @@ mod tests {
         let path = dir.path().join("spectrum.yaml");
         let path_str = path.display().to_string();
 
-        save_spectrum_file(path_str.clone(), REFERENCE.into()).unwrap();
+        write_spectrum_file(&path_str, REFERENCE).unwrap();
         assert_eq!(load_spectrum_file(path_str).unwrap(), REFERENCE);
     }
 

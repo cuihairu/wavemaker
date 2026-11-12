@@ -7,6 +7,8 @@ import StatusView from '../views/StatusView.vue'
 import SpectrumView from '../views/SpectrumView.vue'
 import MetricsView from '../views/MetricsView.vue'
 import ReportsView from '../views/ReportsView.vue'
+import UsersView from '../views/UsersView.vue'
+import LoginView from '../views/LoginView.vue'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
 import { routes } from '../router.js'
@@ -23,6 +25,14 @@ vi.mock('../api.js', async (importOriginal) => {
     saveSpectrum: vi.fn(),
     validateSpectrum: vi.fn(),
     timelineFor: vi.fn(),
+    permissionMatrix: vi.fn(),
+    currentSession: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+    listUsers: vi.fn(),
+    createUser: vi.fn(),
+    deleteUser: vi.fn(),
+    setUserRole: vi.fn(),
   }
 })
 
@@ -32,6 +42,13 @@ import {
   saveSpectrum,
   validateSpectrum,
   timelineFor,
+  permissionMatrix,
+  currentSession,
+  login,
+  listUsers,
+  createUser,
+  deleteUser,
+  setUserRole,
 } from '../api.js'
 
 const runs = [
@@ -397,6 +414,113 @@ describe('ReportsView', () => {
     rejectStatus(new Error('controller_status_failed: 500'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(wrapper.find('[data-test="error"]').text()).toContain('controller_status_failed')
+  })
+})
+
+describe('UsersView', () => {
+  // Shape identical to the shell's permission_matrix() rows (WM-0607).
+  const matrix = [
+    { action: 'view', viewer: true, operator: true, admin: true, minimum_role: null },
+    { action: 'stop_swell', viewer: false, operator: true, admin: true, minimum_role: 'operator' },
+    { action: 'edit_config', viewer: false, operator: false, admin: true, minimum_role: 'admin' },
+  ]
+  const admin = { username: 'ada', role: 'admin' }
+
+  function mountUsers(session) {
+    permissionMatrix.mockResolvedValue(matrix)
+    currentSession.mockResolvedValue(session)
+    return mount(UsersView, { global: { plugins: [makeRouter()] } })
+  }
+
+  it('renders the permission matrix verbatim from the shell', async () => {
+    currentSession.mockResolvedValue(null)
+    permissionMatrix.mockResolvedValue(matrix)
+    listUsers.mockRejectedValue(new Error('not_authenticated'))
+    const wrapper = mount(UsersView, { global: { plugins: [makeRouter()] } })
+    await flushPromises()
+    const rows = wrapper.findAll('[data-test="matrix-row"]')
+    expect(rows).toHaveLength(matrix.length)
+    expect(rows[0].text()).toContain('view')
+    expect(rows[0].text()).toContain('allow')
+    expect(rows[1].text()).toContain('deny')
+    // The honest control-plane note is present.
+    expect(wrapper.find('[data-test="control-plane-note"]').text()).toContain('single-operator')
+  })
+
+  it('shows users and management UI for an admin session', async () => {
+    listUsers.mockResolvedValue([
+      { username: 'ada', role: 'admin' },
+      { username: 'bob', role: 'viewer' },
+    ])
+    const wrapper = mountUsers(admin)
+    await flushPromises()
+    expect(wrapper.find('[data-test="session-info"]').text()).toContain('ada')
+    const rows = wrapper.findAll('[data-test="user-row"]')
+    expect(rows).toHaveLength(2)
+    expect(wrapper.find('[data-test="create-form"]').exists()).toBe(true)
+  })
+
+  it('denies management to non-admins without hiding the matrix', async () => {
+    const wrapper = mountUsers({ username: 'bob', role: 'viewer' })
+    await flushPromises()
+    expect(wrapper.find('[data-test="manage-denied"]').text()).toContain('admin')
+    expect(wrapper.find('[data-test="create-form"]').exists()).toBe(false)
+  })
+
+  it('creates a user and refreshes the list', async () => {
+    listUsers.mockResolvedValue([])
+    createUser.mockResolvedValue({ username: 'carol', role: 'operator' })
+    const wrapper = mountUsers(admin)
+    await flushPromises()
+    await wrapper.find('[data-test="new-username"]').setValue('carol')
+    await wrapper.find('[data-test="new-password"]').setValue('pw')
+    await wrapper.find('[data-test="new-role"]').setValue('operator')
+    await wrapper.find('[data-test="create-form"]').trigger('submit')
+    await flushPromises()
+    expect(createUser).toHaveBeenCalledWith('carol', 'pw', 'operator')
+    expect(wrapper.find('[data-test="notice"]').text()).toContain('carol')
+  })
+
+  it('surfaces a named denial when a management call fails', async () => {
+    listUsers.mockResolvedValue([{ username: 'bob', role: 'viewer' }])
+    deleteUser.mockRejectedValue(new Error('forbidden: role viewer may not manage_users (requires admin)'))
+    const wrapper = mountUsers(admin)
+    await flushPromises()
+    await wrapper.find('[data-test="delete-bob"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="error"]').text()).toContain('forbidden: role viewer')
+  })
+})
+
+describe('LoginView', () => {
+  it('logs in, sets the session and returns to the swell list', async () => {
+    login.mockResolvedValue({ username: 'ada', role: 'admin' })
+    const router = makeRouter()
+    router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [router] },
+    })
+    await wrapper.find('[data-test="username-input"]').setValue('ada')
+    await wrapper.find('[data-test="password-input"]').setValue('pw')
+    // jsdom does not turn a submit-button click into a form submission.
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(login).toHaveBeenCalledWith('ada', 'pw')
+    expect(wrapper.find('[data-test="error"]').exists()).toBe(false)
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('renders the named shell error on a failed login', async () => {
+    login.mockRejectedValue(new Error('login_failed: BadPassword'))
+    const wrapper = mount(LoginView, { global: { plugins: [makeRouter()] } })
+    await wrapper.find('[data-test="username-input"]').setValue('ada')
+    await wrapper.find('[data-test="password-input"]').setValue('wrong')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[data-test="error"]').text()).toContain('login_failed: BadPassword')
+    // Stays on the login page.
+    expect(wrapper.find('[data-test="local-note"]').exists()).toBe(true)
   })
 })
 

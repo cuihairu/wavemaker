@@ -7,6 +7,7 @@ import {
   timelinePath,
   strideSamples,
   compareRuns,
+  canDo,
 } from '../api.js'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
@@ -225,5 +226,33 @@ describe('report sections', () => {
     for (const s of REPORT_SECTIONS) {
       expect(s.content).toBeTruthy()
     }
+  })
+})
+
+describe('canDo', () => {
+  // Shape identical to the shell's permission_matrix() rows (WM-0607).
+  const matrix = [
+    { action: 'view', viewer: true, operator: true, admin: true, minimum_role: null },
+    { action: 'stop_swell', viewer: false, operator: true, admin: true, minimum_role: 'operator' },
+    { action: 'edit_config', viewer: false, operator: false, admin: true, minimum_role: 'admin' },
+  ]
+  const role = (r) => ({ username: 'u', role: r })
+
+  it('denies without a session, even for view', () => {
+    expect(canDo(matrix, null, 'view')).toBe(false)
+    expect(canDo(matrix, undefined, 'view')).toBe(false)
+  })
+
+  it('follows the matrix per role and action', () => {
+    expect(canDo(matrix, role('viewer'), 'view')).toBe(true)
+    expect(canDo(matrix, role('viewer'), 'stop_swell')).toBe(false)
+    expect(canDo(matrix, role('operator'), 'stop_swell')).toBe(true)
+    expect(canDo(matrix, role('operator'), 'edit_config')).toBe(false)
+    expect(canDo(matrix, role('admin'), 'edit_config')).toBe(true)
+  })
+
+  it('denies actions missing from the matrix (never defaults to allowed)', () => {
+    expect(canDo(matrix, role('admin'), 'manage_users')).toBe(false)
+    expect(canDo([], role('admin'), 'view')).toBe(false)
   })
 })

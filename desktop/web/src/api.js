@@ -135,3 +135,30 @@ export function compareRuns(runs, aId, bId) {
   const byId = new Map((runs || []).map((r) => [r.run_id, r]))
   return { a: byId.get(aId) || null, b: byId.get(bId) || null }
 }
+
+// Users, roles and the permission matrix (WM-0607; ADR-009). These are
+// desktop-shell commands: the permission model is local to the desktop
+// (the controller REST stays single-operator, ADR-008), so the shell
+// decides what a role may do and the webview only renders it.
+
+export const permissionMatrix = () => desktopInvoke('permission_matrix')
+export const currentSession = () => desktopInvoke('current_session')
+export const login = (username, password) =>
+  desktopInvoke('login', { username, password })
+export const logout = () => desktopInvoke('logout')
+export const listUsers = () => desktopInvoke('list_users')
+export const createUser = (username, password, role) =>
+  desktopInvoke('create_user', { username, password, role })
+export const deleteUser = (username) => desktopInvoke('delete_user', { username })
+export const setUserRole = (username, role) =>
+  desktopInvoke('set_user_role', { username, role })
+
+/// Which run-control operations a role may perform, for enabling/disabling
+/// the UI affordances. Derived from the engine matrix, not hardcoded
+/// per view. Absence of an action is a denial.
+export function canDo(matrix, session, action) {
+  if (!session) return false
+  const row = (matrix || []).find((r) => r.action === action)
+  if (!row) return false
+  return Boolean(row[session.role])
+}

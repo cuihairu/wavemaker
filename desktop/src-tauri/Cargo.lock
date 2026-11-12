@@ -4453,8 +4453,11 @@ dependencies = [
 name = "wavemaker-desktop"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "serde",
+ "serde_json",
  "serde_yaml",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-http",

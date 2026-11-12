@@ -5,6 +5,8 @@ import StatusView from './views/StatusView.vue'
 import SpectrumView from './views/SpectrumView.vue'
 import MetricsView from './views/MetricsView.vue'
 import ReportsView from './views/ReportsView.vue'
+import UsersView from './views/UsersView.vue'
+import LoginView from './views/LoginView.vue'
 
 export const routes = [
   { path: '/', name: 'swell-list', component: SwellListView },
@@ -13,6 +15,8 @@ export const routes = [
   { path: '/spectrum', name: 'spectrum', component: SpectrumView },
   { path: '/metrics', name: 'metrics', component: MetricsView },
   { path: '/reports', name: 'reports', component: ReportsView },
+  { path: '/users', name: 'users', component: UsersView },
+  { path: '/login', name: 'login', component: LoginView },
 ]
 
 export function createAppRouter() {

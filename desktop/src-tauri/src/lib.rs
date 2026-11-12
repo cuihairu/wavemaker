@@ -7,8 +7,10 @@
 //! validation so the report matches `wm validate` exactly. The load
 //! timeline (WM-0604) reuses wm-runtime's ArrivalPlan. Users, roles and
 //! the permission matrix (WM-0607) are local to this shell — the
-//! controller REST stays single-operator (ADR-008; ADR-009).
+//! controller REST stays single-operator (ADR-008; ADR-009). The audit
+//! trail (WM-0608) records every gated attempt, allowed or denied.
 
+mod audit;
 mod authz;
 mod spectrum;
 mod timeline;
@@ -32,6 +34,7 @@ pub fn run() {
             users::create_user,
             users::delete_user,
             users::set_user_role,
+            audit::query_audit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the wavemaker desktop application");

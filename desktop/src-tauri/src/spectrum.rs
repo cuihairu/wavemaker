@@ -75,14 +75,16 @@ pub fn load_spectrum_file(path: String) -> Result<String, String> {
 /// Saving a spectrum is `edit_config` in the ADR-009 matrix — admin
 /// only. The gate lives HERE, on the shell command, because the Rust
 /// side is the trust boundary; the UI's disabled buttons are presentation
-/// only. Reading (load) stays open to every logged-in role.
+/// only. The attempt (allowed or denied) is recorded in the audit trail
+/// (WM-0608). Reading (load) stays open to every logged-in role.
 #[tauri::command]
 pub fn save_spectrum_file(
+    app: tauri::AppHandle,
     state: State<'_, AuthzState>,
     path: String,
     content: String,
 ) -> Result<(), String> {
-    crate::users::authorize(&state, Action::EditConfig)?;
+    crate::users::authorize(&app, &state, Action::EditConfig, &format!("save spectrum {path}"))?;
     write_spectrum_file(&path, &content)
 }
 

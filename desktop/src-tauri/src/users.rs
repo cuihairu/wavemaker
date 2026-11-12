@@ -23,15 +23,21 @@ pub struct AuthzState {
     session: Mutex<Option<Session>>,
 }
 
-/// Where `users.json` lives: the app's data directory, created lazily.
-/// A missing file is honestly "no users" (see authz::load_users).
-fn users_path(app: &AppHandle) -> Result<PathBuf, String> {
+/// The app's data directory, created lazily — shared by `users.json`
+/// and the audit trail (`audit.jsonl`).
+pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("cannot resolve app data dir: {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create app data dir: {e}"))?;
-    Ok(dir.join("users.json"))
+    Ok(dir)
+}
+
+/// Where `users.json` lives. A missing file is honestly "no users"
+/// (see authz::load_users).
+fn users_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("users.json"))
 }
 
 /// Who is logged in and with which role — serialized for the webview.
@@ -120,24 +126,42 @@ pub fn logout(state: State<'_, AuthzState>) {
     *state.session.lock().unwrap() = None;
 }
 
-/// Gate a session-requiring action through the engine-side matrix.
-/// Crate-visible so other shell commands (e.g. spectrum save's
-/// `edit_config` gate) share the same trust boundary.
-pub(crate) fn authorize(state: &AuthzState, action: Action) -> Result<Session, String> {
+/// Gate a session-requiring action through the engine-side matrix, then
+/// record the judged attempt (who / when / what, allowed or denied) in
+/// the audit trail — the single chokepoint every gated command passes
+/// through (WM-0608). Crate-visible so other shell commands (e.g.
+/// spectrum save's `edit_config` gate) share the same trust boundary.
+/// Fail-closed: an unwritable trail fails the command with a named
+/// error rather than letting an action run unaudited.
+pub(crate) fn authorize(
+    app: &AppHandle,
+    state: &AuthzState,
+    action: Action,
+    detail: &str,
+) -> Result<Session, String> {
     let session = state.session.lock().unwrap().clone();
-    match session {
+    let judged = match &session {
         None => Err("not_authenticated".to_string()),
-        Some(session) => authz::gate(Some(&session), action)
-            .map(|_| session)
+        Some(session) => authz::gate(Some(session), action)
+            .map(|_| session.clone())
             .map_err(|err| err.reason()),
-    }
+    };
+    let username = match &judged {
+        Ok(session) => Some(session.username.clone()),
+        // A denied attempt names its session; without a session there is
+        // no operator to name.
+        Err(_) => session.as_ref().map(|s| s.username.clone()),
+    };
+    let path = app_data_dir(app)?.join("audit.jsonl");
+    crate::audit::record(&path, action, judged.is_ok(), username, detail)?;
+    judged
 }
 
 /// List registered users (identity and role only — never hashes).
 /// Admin-only via the matrix (`manage_users`).
 #[tauri::command]
 pub fn list_users(app: AppHandle, state: State<'_, AuthzState>) -> Result<Vec<SessionInfo>, String> {
-    authorize(&state, Action::ManageUsers)?;
+    authorize(&app, &state, Action::ManageUsers, "list users")?;
     let path = users_path(&app)?;
     let users = authz::load_users(&path).map_err(|e| format!("cannot load users: {e:?}"))?;
     Ok(users
@@ -159,7 +183,7 @@ pub fn create_user(
     password: String,
     role: String,
 ) -> Result<SessionInfo, String> {
-    authorize(&state, Action::ManageUsers)?;
+    authorize(&app, &state, Action::ManageUsers, &format!("create user {username}"))?;
     let role = parse_role(&role)?;
     let path = users_path(&app)?;
     let mut users = authz::load_users(&path).map_err(|e| format!("cannot load users: {e:?}"))?;
@@ -176,7 +200,7 @@ pub fn create_user(
 /// that would lock the last admin out.
 #[tauri::command]
 pub fn delete_user(app: AppHandle, state: State<'_, AuthzState>, username: String) -> Result<(), String> {
-    let session = authorize(&state, Action::ManageUsers)?;
+    let session = authorize(&app, &state, Action::ManageUsers, &format!("delete user {username}"))?;
     if session.username == username {
         return Err("cannot delete your own account".to_string());
     }
@@ -199,7 +223,7 @@ pub fn set_user_role(
     username: String,
     role: String,
 ) -> Result<(), String> {
-    authorize(&state, Action::ManageUsers)?;
+    authorize(&app, &state, Action::ManageUsers, &format!("set role of {username} to {role}"))?;
     let role = parse_role(&role)?;
     let path = users_path(&app)?;
     let mut users = authz::load_users(&path).map_err(|e| format!("cannot load users: {e:?}"))?;

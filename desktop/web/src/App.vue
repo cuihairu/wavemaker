@@ -38,6 +38,7 @@ async function onLogout() {
         <RouterLink to="/metrics">Metrics</RouterLink>
         <RouterLink to="/reports">Reports</RouterLink>
         <RouterLink to="/users">Users</RouterLink>
+        <RouterLink to="/audit">Audit</RouterLink>
       </nav>
       <span class="session-box" data-test="session-box">
         <template v-if="session">

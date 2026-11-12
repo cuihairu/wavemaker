@@ -153,6 +153,10 @@ export const deleteUser = (username) => desktopInvoke('delete_user', { username 
 export const setUserRole = (username, role) =>
   desktopInvoke('set_user_role', { username, role })
 
+// Audit trail query (WM-0608): filtering happens on the Rust side — the
+// filter is passed through verbatim, never applied locally.
+export const queryAudit = (filter = {}) => desktopInvoke('query_audit', { filter })
+
 /// Which run-control operations a role may perform, for enabling/disabling
 /// the UI affordances. Derived from the engine matrix, not hardcoded
 /// per view. Absence of an action is a denial.

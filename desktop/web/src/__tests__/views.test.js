@@ -8,6 +8,7 @@ import SpectrumView from '../views/SpectrumView.vue'
 import MetricsView from '../views/MetricsView.vue'
 import ReportsView from '../views/ReportsView.vue'
 import UsersView from '../views/UsersView.vue'
+import AuditView from '../views/AuditView.vue'
 import LoginView from '../views/LoginView.vue'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
@@ -33,6 +34,7 @@ vi.mock('../api.js', async (importOriginal) => {
     createUser: vi.fn(),
     deleteUser: vi.fn(),
     setUserRole: vi.fn(),
+    queryAudit: vi.fn(),
   }
 })
 
@@ -49,6 +51,7 @@ import {
   createUser,
   deleteUser,
   setUserRole,
+  queryAudit,
 } from '../api.js'
 
 const runs = [
@@ -558,5 +561,85 @@ describe('SpectrumView timeline', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="error"]').text()).toContain('no arrival section')
     expect(wrapper.find('[data-test="timeline-section"]').exists()).toBe(false)
+  })
+})
+
+describe('AuditView', () => {
+  // Shape identical to the shell's AuditRow (WM-0608).
+  const trail = [
+    {
+      seq: 1,
+      timestamp_ms: 1762900000000,
+      username: 'ada',
+      action: 'edit_config',
+      outcome: 'allowed',
+      detail: 'save spectrum examples/spec.yaml',
+    },
+    {
+      seq: 2,
+      timestamp_ms: 1762900600000,
+      username: null,
+      action: 'manage_users',
+      outcome: 'denied',
+      detail: 'forbidden: role viewer may not manage_users (requires admin)',
+    },
+  ]
+
+  function mountAudit() {
+    return mount(AuditView, { global: { plugins: [makeRouter()] } })
+  }
+
+  it('renders the trail verbatim and queries everything on open', async () => {
+    queryAudit.mockResolvedValue(trail)
+    const wrapper = mountAudit()
+    await flushPromises()
+    // The initial query has no filter — the whole trail, never a subset.
+    expect(queryAudit).toHaveBeenCalledWith({})
+    const rows = wrapper.findAll('[data-test="audit-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('ada')
+    expect(rows[0].text()).toContain('edit_config')
+    expect(rows[0].text()).toContain('allowed')
+    expect(rows[0].text()).toContain('save spectrum examples/spec.yaml')
+    // A denied attempt without a session has no operator to name.
+    expect(rows[1].text()).toContain('—')
+    expect(rows[1].text()).toContain('denied')
+    // The honest scope note: append-only, queries recorded too.
+    expect(wrapper.find('[data-test="audit-note"]').text()).toContain('append-only')
+  })
+
+  it('passes the built filter through to the Rust-side query', async () => {
+    queryAudit.mockResolvedValue([])
+    const wrapper = mountAudit()
+    await flushPromises()
+    await wrapper.find('[data-test="filter-username"]').setValue('  ada  ')
+    await wrapper.find('[data-test="filter-action"]').setValue('edit_config')
+    await wrapper.find('[data-test="filter-outcome"]').setValue('denied')
+    await wrapper.find('[data-test="filter-form"]').trigger('submit')
+    await flushPromises()
+    // Trimmed on the username; 'all' becomes null (no filter). The UI
+    // never filters locally.
+    expect(queryAudit).toHaveBeenLastCalledWith({
+      username: 'ada',
+      action: 'edit_config',
+      outcome: 'denied',
+    })
+  })
+
+  it('shows the honest empty state when nothing matches', async () => {
+    queryAudit.mockResolvedValue([])
+    const wrapper = mountAudit()
+    await flushPromises()
+    expect(wrapper.find('[data-test="empty"]').text()).toBe('No audit entries match.')
+    expect(wrapper.find('[data-test="audit-table"]').exists()).toBe(false)
+  })
+
+  it('surfaces a named shell error instead of an empty table', async () => {
+    queryAudit.mockRejectedValue(new Error('not_authenticated'))
+    const wrapper = mountAudit()
+    await flushPromises()
+    expect(wrapper.find('[data-test="error"]').text()).toContain('not_authenticated')
+    expect(wrapper.find('[data-test="audit-table"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="empty"]').exists()).toBe(false)
   })
 })

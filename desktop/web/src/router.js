@@ -6,6 +6,7 @@ import SpectrumView from './views/SpectrumView.vue'
 import MetricsView from './views/MetricsView.vue'
 import ReportsView from './views/ReportsView.vue'
 import UsersView from './views/UsersView.vue'
+import AuditView from './views/AuditView.vue'
 import LoginView from './views/LoginView.vue'
 
 export const routes = [
@@ -16,6 +17,7 @@ export const routes = [
   { path: '/metrics', name: 'metrics', component: MetricsView },
   { path: '/reports', name: 'reports', component: ReportsView },
   { path: '/users', name: 'users', component: UsersView },
+  { path: '/audit', name: 'audit', component: AuditView },
   { path: '/login', name: 'login', component: LoginView },
 ]
 

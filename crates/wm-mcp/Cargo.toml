@@ -1,0 +1,33 @@
+[package]
+name = "wm-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Wavemaker MCP server (stdio): controller REST forwarding and spectrum engine tools for AI agents"
+
+[[bin]]
+name = "wm-mcp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+# Raw controller forwarding (list_runs / query_status) uses the same blocking
+# client stack the CLI already ships; typed run/stop calls go through wm-cli.
+ureq = { version = "2", features = ["json"] }
+wm-core.workspace = true
+wm-runtime.workspace = true
+wm-cli.workspace = true
+
+[dev-dependencies]
+# e2e: official rmcp client + child-process transport, really spawning this
+# crate's binary over stdio (same discipline as the sandtable-mcp precedent).
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+axum.workspace = true
+tempfile.workspace = true
+wm-controller.workspace = true

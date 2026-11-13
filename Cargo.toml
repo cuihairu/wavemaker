@@ -10,6 +10,7 @@ members = [
     "crates/wm-observability",
     "crates/wm-basin",
     "crates/wm-cli",
+    "crates/wm-mcp",
 ]
 
 [workspace.package]
@@ -47,6 +48,11 @@ wm-runtime = { path = "crates/wm-runtime" }
 wm-worker = { path = "crates/wm-worker" }
 wm-supervisor = { path = "crates/wm-supervisor" }
 wm-observability = { path = "crates/wm-observability" }
+wm-cli = { path = "crates/wm-cli" }
+
+# Official Rust MCP SDK; server + stdio(io) transport, macros in default.
+# The wm-mcp e2e test additionally enables client + transport-child-process.
+rmcp = { version = "3.7", features = ["server", "transport-io"] }
 
 [profile.release]
 lto = "thin"

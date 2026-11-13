@@ -26,6 +26,8 @@ Wavemaker 通过统一的负载模型（Spectrum）、确定性计划数据（Sh
 
 Wavemaker 处于持续构建阶段。Phase 0（语义）与 Phase 1（协议 + 最小控制面）已实现并有测试覆盖；文档中的分阶段路线图（Phase 0–6）定义了实现顺序。
 
+MCP 服务器（`crates/wm-mcp`，基于官方 rmcp SDK 的 stdio 传输）向 AI agent 暴露 `list_runs`、`query_status`、`validate_spectrum`、`load_timeline` 与 `run_scenario` 五个工具；详见 [crates/wm-mcp/README.md](crates/wm-mcp/README.md)。
+
 ## 每日构建
 
 最新滚动构建请到 **Releases 页**（`nightly` 发布）获取：

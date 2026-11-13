@@ -26,6 +26,8 @@ The complete technical design and implementation plan is published at **https://
 
 Wavemaker is in the active-build stage. Phase 0 (semantics) and Phase 1 (protocol + minimal control plane) are implemented and tested; the phased roadmap (Phase 0–6) in the documentation defines what gets built and in what order.
 
+An MCP server (`crates/wm-mcp`, stdio via the official rmcp SDK) exposes `list_runs`, `query_status`, `validate_spectrum`, `load_timeline` and `run_scenario` to AI agents; see [crates/wm-mcp/README.md](crates/wm-mcp/README.md).
+
 ## Daily Builds
 
 Get the latest rolling build from the **Releases page** (the `nightly` release):

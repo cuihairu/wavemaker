@@ -52,6 +52,20 @@ pub fn load_plan(path: &Path) -> Result<(TestPlan, String, String), String> {
     Ok((plan, raw, sha))
 }
 
+/// Rewrite step `spectrum` paths that are relative into paths anchored at
+/// `base` (the plan file's directory), so a plan runs identically from any
+/// working directory. Absolute paths pass through untouched.
+pub fn resolve_spectra(plan: &mut TestPlan, base: &Path) {
+    for step in &mut plan.steps {
+        if let Some(spec) = &mut step.params.spectrum {
+            let p = Path::new(spec.as_str());
+            if p.is_relative() {
+                *spec = base.join(p).display().to_string();
+            }
+        }
+    }
+}
+
 /// Render plan violations for terminal output (same shape as
 /// `commands::format_violations`).
 pub fn format_plan_violations(violations: &[PlanViolation]) -> String {
@@ -139,6 +153,35 @@ mod tests {
         assert_eq!(plan.meta.name, "smoke");
         assert!(raw.contains("[[steps]]"));
         assert_eq!(sha.len(), 64);
+    }
+
+    #[test]
+    fn resolve_spectra_anchors_relative_paths_at_the_plan_dir() {
+        let mut plan = parse_plan(
+            r#"
+[meta]
+name = "demo"
+
+[[steps]]
+id = "load"
+action = "inject_load"
+params = { spectrum = "../spectra/demo.yaml", duration_secs = 60 }
+
+[[steps]]
+id = "pin"
+action = "inject_load"
+params = { spectrum = "/abs/kept.yaml", duration_secs = 60 }
+"#,
+        )
+        .unwrap();
+        resolve_spectra(&mut plan, Path::new("examples/plans"));
+        let specs: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter_map(|s| s.params.spectrum.as_deref())
+            .collect();
+        assert_eq!(specs[0], "examples/plans/../spectra/demo.yaml");
+        assert_eq!(specs[1], "/abs/kept.yaml", "absolute path untouched");
     }
 
     #[test]

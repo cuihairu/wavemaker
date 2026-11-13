@@ -37,7 +37,8 @@ export default defineConfig({
             text: 'Load & Execution',
             items: [
               { text: 'Spectrum & Deterministic Plans', link: '/spectrum' },
-              { text: 'Native Runtime', link: '/native-runtime' }
+              { text: 'Native Runtime', link: '/native-runtime' },
+              { text: 'Test Plans', link: '/test-plan' }
             ]
           },
           {
@@ -103,7 +104,8 @@ export default defineConfig({
             text: '负载与执行',
             items: [
               { text: 'Spectrum 与确定性计划', link: '/zh/spectrum' },
-              { text: 'Native Runtime', link: '/zh/native-runtime' }
+              { text: 'Native Runtime', link: '/zh/native-runtime' },
+              { text: '测试计划', link: '/zh/test-plan' }
             ]
           },
           {

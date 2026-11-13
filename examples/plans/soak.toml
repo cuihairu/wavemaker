@@ -1,0 +1,68 @@
+# Demo ③ — soak: five bots for thirty minutes, watching for a memory
+# leak. Two snapshots (early / late) feed the trend assertion, which fits
+# a least-squares slope (MB per hour) over every matched snapshot; the
+# `source` key is omitted on purpose so the assertion judges all captures.
+#
+#   wm test run examples/plans/soak.toml --time-scale 0   # stub, instant
+[meta]
+name = "soak"
+game = "demo"
+engine = "stub"
+
+[[steps]]
+id = "probe"
+action = "prepare"
+[steps.params]
+target = "http://127.0.0.1:8080/healthz"
+timeout_secs = 2
+
+[[steps]]
+id = "load"
+action = "inject_load"
+[steps.params]
+spectrum = "../spectra/demo-ramp.yaml"
+concurrency = 5
+duration_secs = 1800
+
+[[steps]]
+id = "warmup"
+action = "hold"
+[steps.params]
+secs = 60
+
+[[steps]]
+id = "early"
+action = "capture"
+[steps.params]
+label = "early"
+
+[[steps]]
+id = "dwell"
+action = "hold"
+[steps.params]
+secs = 1580
+
+[[steps]]
+id = "late"
+action = "capture"
+[steps.params]
+label = "late"
+
+[[steps]]
+id = "no-leak"
+action = "assert"
+[steps.params]
+metric = "memory_growth_mb_per_hour"
+max = 15.0
+
+[[steps]]
+id = "rest"
+action = "cooldown"
+[steps.params]
+secs = 30
+
+[[steps]]
+id = "write"
+action = "report"
+[steps.params]
+stage = "soak"

@@ -26,7 +26,29 @@ Wavemaker 通过统一的负载模型（Spectrum）、确定性计划数据（Sh
 
 Wavemaker 处于持续构建阶段。Phase 0（语义）与 Phase 1（协议 + 最小控制面）已实现并有测试覆盖；文档中的分阶段路线图（Phase 0–6）定义了实现顺序。
 
-MCP 服务器（`crates/wm-mcp`，基于官方 rmcp SDK 的 stdio 传输）向 AI agent 暴露 `list_runs`、`query_status`、`validate_spectrum`、`load_timeline` 与 `run_scenario` 五个工具；详见 [crates/wm-mcp/README.md](crates/wm-mcp/README.md)。
+MCP 服务器（`crates/wm-mcp`，基于官方 rmcp SDK 的 stdio 传输）向 AI agent 暴露 `list_runs`、`query_status`、`validate_spectrum`、`load_timeline`、`run_scenario`、`run_test_plan` 与 `get_test_report` 七个工具；详见 [crates/wm-mcp/README.md](crates/wm-mcp/README.md)。
+
+## 快速开始
+
+一分钟内跑起第一次负载验证——不需要真实游戏服务器（默认后端是进程内
+模拟器，报告醒目标注 `simulated`）：
+
+```bash
+cargo build -p wm-cli
+./examples/run_demo.sh
+```
+
+测试计划是声明式 TOML——注入负载、保持、采集、断言。该脚本把三个示例
+计划（1 并发冒烟、10 → 50 → 100 基线阶梯、带泄漏趋势断言的 30 分钟
+浸泡）跑在 stub 后端上，各自写出 `wm-runs/<plan>-<时间戳>/report.md`。
+单个计划、瞬时完成（真实睡眠压缩、模拟时长全额）：
+
+```bash
+wm test run examples/plans/smoke.toml --time-scale 0
+```
+
+计划语法、断言语义、controller 后端与 stub 的诚实边界见
+[docs/zh/test-plan.md](docs/zh/test-plan.md)。
 
 ## 每日构建
 

@@ -1,0 +1,67 @@
+# Demo ① — smoke: one bot for five minutes. Gates connectivity (the probe)
+# and zero errors at minimum load. This is the plan to run first against a
+# new target; it is also the stub-backend quickstart (see docs/test-plan.md).
+#
+#   wm test run examples/plans/smoke.toml          # stub backend, real time
+#   wm test run examples/plans/smoke.toml --time-scale 0   # instant
+#
+# The stub backend simulates: metrics are synthetic and the report says so.
+[meta]
+name = "smoke"
+game = "demo"
+engine = "stub"
+
+[[steps]]
+id = "probe"
+action = "prepare"
+[steps.params]
+target = "http://127.0.0.1:8080/healthz"
+timeout_secs = 2
+
+[[steps]]
+id = "load"
+action = "inject_load"
+[steps.params]
+spectrum = "../spectra/demo-ramp.yaml"
+concurrency = 1
+duration_secs = 300
+
+[[steps]]
+id = "settle"
+action = "hold"
+[steps.params]
+secs = 60
+
+[[steps]]
+id = "steady"
+action = "capture"
+[steps.params]
+label = "steady"
+
+[[steps]]
+id = "no-errors"
+action = "assert"
+[steps.params]
+metric = "error_rate"
+max = 0.0
+source = "steady"
+
+[[steps]]
+id = "responsive"
+action = "assert"
+[steps.params]
+metric = "latency_p99_ms"
+max = 250
+source = "steady"
+
+[[steps]]
+id = "rest"
+action = "cooldown"
+[steps.params]
+secs = 30
+
+[[steps]]
+id = "write"
+action = "report"
+[steps.params]
+stage = "smoke"

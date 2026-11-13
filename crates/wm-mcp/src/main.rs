@@ -184,7 +184,11 @@ fn run_test_plan_native(
         .map_err(|e| format!("parameter error: {e}"))?;
     let time_scale = time_scale.unwrap_or(1.0);
     let base = forward::controller_base(controller.as_deref());
-    let (plan, raw, sha) = wm_cli::plan::load_plan(Path::new(path))?;
+    let (mut plan, raw, sha) = wm_cli::plan::load_plan(Path::new(path))?;
+    // Relative spectrum paths anchor at the plan file's directory.
+    if let Some(dir) = Path::new(path).parent() {
+        wm_cli::plan::resolve_spectra(&mut plan, dir);
+    }
     let violations = plan.validate();
     if !violations.is_empty() {
         let report = wm_cli::plan::format_plan_violations(&violations);

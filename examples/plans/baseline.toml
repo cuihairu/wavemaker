@@ -1,0 +1,53 @@
+# Demo ② — baseline: a 10 → 50 → 100 staircase. Each level holds two
+# minutes, captures a snapshot, and the assertions judge the worst level —
+# this is the plan that pins "how does the server look at known loads"
+# before any deeper campaign.
+#
+#   wm test run examples/plans/baseline.toml --time-scale 0   # stub, instant
+[meta]
+name = "baseline"
+game = "demo"
+engine = "stub"
+
+[[steps]]
+id = "probe"
+action = "prepare"
+[steps.params]
+target = "http://127.0.0.1:8080/healthz"
+timeout_secs = 2
+
+[[steps]]
+id = "staircase"
+action = "step_load"
+[steps.params]
+spectrum = "../spectra/demo-ramp.yaml"
+levels = [10, 50, 100]
+step_secs = 120
+
+[[steps]]
+id = "p99"
+action = "assert"
+[steps.params]
+metric = "latency_p99_ms"
+max = 250
+source = "staircase"
+
+[[steps]]
+id = "no-errors"
+action = "assert"
+[steps.params]
+metric = "error_rate"
+max = 0.0
+source = "staircase"
+
+[[steps]]
+id = "rest"
+action = "cooldown"
+[steps.params]
+secs = 30
+
+[[steps]]
+id = "write"
+action = "report"
+[steps.params]
+stage = "baseline"

@@ -26,7 +26,31 @@ The complete technical design and implementation plan is published at **https://
 
 Wavemaker is in the active-build stage. Phase 0 (semantics) and Phase 1 (protocol + minimal control plane) are implemented and tested; the phased roadmap (Phase 0–6) in the documentation defines what gets built and in what order.
 
-An MCP server (`crates/wm-mcp`, stdio via the official rmcp SDK) exposes `list_runs`, `query_status`, `validate_spectrum`, `load_timeline` and `run_scenario` to AI agents; see [crates/wm-mcp/README.md](crates/wm-mcp/README.md).
+An MCP server (`crates/wm-mcp`, stdio via the official rmcp SDK) exposes `list_runs`, `query_status`, `validate_spectrum`, `load_timeline`, `run_scenario`, `run_test_plan` and `get_test_report` to AI agents; see [crates/wm-mcp/README.md](crates/wm-mcp/README.md).
+
+## Quickstart
+
+Run a first load verification in under a minute — no game server needed
+(the default backend is an in-process simulator; its reports say
+`simulated` loudly):
+
+```bash
+cargo build -p wm-cli
+./examples/run_demo.sh
+```
+
+A test plan is a declarative TOML — inject load, hold, capture, assert.
+That script runs the three demo plans (a 1-bot smoke, a 10 → 50 → 100
+baseline staircase, a 30-minute soak with a leak-trend assertion) against
+the stub backend and writes a `wm-runs/<plan>-<timestamp>/report.md` for
+each. A single plan, instant (sleeps compressed, simulated durations full):
+
+```bash
+wm test run examples/plans/smoke.toml --time-scale 0
+```
+
+The plan language, assertion semantics, the controller backend, and the
+stub's honest boundaries are in [docs/test-plan.md](docs/test-plan.md).
 
 ## Daily Builds
 

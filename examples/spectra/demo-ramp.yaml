@@ -1,0 +1,13 @@
+# Demo spectrum: a 1→20 arrivals/s ramp over 10 minutes with exponential
+# lifetimes (mean 15 min). One shared curve for the three demo plans —
+# the per-plan concurrency comes from the plan (inject_load `concurrency`
+# override / step_load `levels`), not from this file.
+arrival:
+  ramp:
+    from_per_second: 1
+    to_per_second: 20
+    duration_secs: 600
+lifetime:
+  distribution: exponential
+  mean_secs: 900
+saturation_policy: queue

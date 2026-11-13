@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wm_core::spectrum::{Severity, SpectrumConfig, Violation};
 use wm_core::testplan::TestPlan;
 
-use crate::plan::{format_plan_violations, load_plan};
+use crate::plan::{format_plan_violations, load_plan, resolve_spectra};
 use crate::runner::{production_io, run_plan, RunBackend, RunOptions, RunOutcome};
 
 /// Default controller HTTP endpoint (matches `ControllerConfig` defaults).
@@ -293,10 +293,15 @@ pub fn test_run(opts: TestRunOptions) -> Result<RunOutcome, CommandError> {
         eprintln!("error: {e}");
         return Err(CommandError::Invalid);
     }
-    let (plan, raw, sha) = load_plan(&opts.plan_path).map_err(|e| {
+    let (mut plan, raw, sha) = load_plan(&opts.plan_path).map_err(|e| {
         eprintln!("error: {e}");
         CommandError::Invalid
     })?;
+    // Relative spectrum paths anchor at the plan file's directory, so a
+    // plan runs identically from any working directory.
+    if let Some(dir) = opts.plan_path.parent() {
+        resolve_spectra(&mut plan, dir);
+    }
     let violations = plan.validate();
     if !violations.is_empty() {
         eprintln!("{}", format_plan_violations(&violations));

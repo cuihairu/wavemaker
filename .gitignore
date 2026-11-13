@@ -37,3 +37,4 @@ desktop/src-tauri/gen/
 # Python tooling
 __pycache__/
 .pytest_cache/
+wm-runs/

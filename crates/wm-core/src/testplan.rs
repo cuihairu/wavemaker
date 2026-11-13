@@ -125,7 +125,8 @@ pub struct StepParams {
     // capture / report
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    // capture / assert: producing step id whose snapshots are judged
+    // capture: optional capture-endpoint URL override; assert: producing
+    // step id whose snapshots are judged
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     // assert
@@ -200,6 +201,17 @@ impl AssertMetric {
 
     pub fn takes_min(self) -> bool {
         matches!(self, AssertMetric::Throughput)
+    }
+
+    /// The snake_case name as it appears in plan documents and reports.
+    pub fn name(self) -> &'static str {
+        match self {
+            AssertMetric::LatencyP99Ms => "latency_p99_ms",
+            AssertMetric::ErrorRate => "error_rate",
+            AssertMetric::Throughput => "throughput",
+            AssertMetric::DisconnectRecoverySecs => "disconnect_recovery_secs",
+            AssertMetric::MemoryGrowthMbPerHour => "memory_growth_mb_per_hour",
+        }
     }
 }
 

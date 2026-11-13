@@ -2696,14 +2696,18 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "hex",
  "serde",
+ "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "ureq",
  "wm-controller",
  "wm-core",
  "wm-observability",
+ "wm-runtime",
 ]
 
 [[package]]

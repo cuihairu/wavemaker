@@ -1,10 +1,16 @@
 //! Subcommand implementations. `validate` checks a spectrum config file
 //! (WM-0103); `run` / `status` / `stop` drive the controller's HTTP API
-//! (WM-0111).
+//! (WM-0111); `test_validate` / `test_run` execute declarative test plans
+//! (WM-TP-2).
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use wm_core::spectrum::{Severity, SpectrumConfig, Violation};
+use wm_core::testplan::TestPlan;
+
+use crate::plan::{format_plan_violations, load_plan};
+use crate::runner::{production_io, run_plan, RunBackend, RunOptions, RunOutcome};
 
 /// Default controller HTTP endpoint (matches `ControllerConfig` defaults).
 pub const DEFAULT_CONTROLLER: &str = "http://127.0.0.1:7600";
@@ -16,6 +22,9 @@ pub enum ExitCode {
     Invalid = 1,
     /// Controller unreachable, or it answered with an error status.
     Unavailable = 3,
+    /// The plan ran end to end but verification did not pass (assert FAIL
+    /// or a step error aborted it); the report carries the detail.
+    Failed = 4,
 }
 
 /// Failure modes shared by the controller-facing subcommands.
@@ -233,9 +242,107 @@ pub fn format_violations(violations: &[Violation]) -> String {
         .join("\n")
 }
 
+// --- test plan subcommands (WM-TP-2) ------------------------------------
+
+/// Caller-facing options for `wm test run`.
+#[derive(Debug, Clone)]
+pub struct TestRunOptions {
+    pub plan_path: PathBuf,
+    pub backend: RunBackend,
+    pub controller: String,
+    /// Metrics snapshot endpoint for the controller backend.
+    pub basin_url: Option<String>,
+    /// Sleep compression (stub backend only), in (0.0, 1.0].
+    pub time_scale: f64,
+    /// Run directory; `None` = `wm-runs/<name>-<timestamp>`.
+    pub out_dir: Option<PathBuf>,
+}
+
+/// Validate a plan file, rendering violations on stderr. Warnings still
+/// validate; error-severity issues are `CommandError::Invalid`.
+pub fn test_validate(path: &Path) -> Result<TestPlan, CommandError> {
+    let (plan, _raw, _sha) = load_plan(path).map_err(|e| {
+        eprintln!("error: {e}");
+        CommandError::Invalid
+    })?;
+    let violations = plan.validate();
+    if !violations.is_empty() {
+        eprintln!("{}", format_plan_violations(&violations));
+    }
+    if violations.iter().any(|v| v.severity == Severity::Error) {
+        eprintln!("invalid plan: {} issue(s)", violations.len());
+        return Err(CommandError::Invalid);
+    }
+    Ok(plan)
+}
+
+/// Execute a test plan end to end: load, validate, build the backend, run
+/// the state machine, write the run directory (plan + timeline + asserts +
+/// metrics + report.md). `Err` means the plan never ran; a plan that ran
+/// but failed verification returns `Ok` with `verdict: failed`.
+pub fn test_run(opts: TestRunOptions) -> Result<RunOutcome, CommandError> {
+    // Backend/time-scale pairing is validated before touching the plan.
+    let probe = RunOptions {
+        backend: opts.backend,
+        controller: opts.controller.clone(),
+        basin_url: opts.basin_url.clone(),
+        time_scale: opts.time_scale,
+        out_dir: None,
+    };
+    if let Err(e) = probe.validate() {
+        eprintln!("error: {e}");
+        return Err(CommandError::Invalid);
+    }
+    let (plan, raw, sha) = load_plan(&opts.plan_path).map_err(|e| {
+        eprintln!("error: {e}");
+        CommandError::Invalid
+    })?;
+    let violations = plan.validate();
+    if !violations.is_empty() {
+        eprintln!("{}", format_plan_violations(&violations));
+    }
+    let out_dir = opts
+        .out_dir
+        .unwrap_or_else(|| default_run_dir(&plan.meta.name));
+    let run_opts = RunOptions {
+        backend: opts.backend,
+        controller: opts.controller,
+        basin_url: opts.basin_url,
+        time_scale: opts.time_scale,
+        out_dir: Some(out_dir),
+    };
+    let mut io = production_io(&run_opts, run_opts.out_dir.as_deref());
+    run_plan(&plan, &run_opts, io.as_mut(), &raw, &sha).map_err(|e| {
+        eprintln!("error: {e}");
+        CommandError::Unavailable(e)
+    })
+}
+
+/// `wm-runs/<name>-<unix_ms>` with the plan name sanitized to a file-safe
+/// slug. Shared with the MCP `run_test_plan` tool so both faces default to
+/// the same layout.
+pub fn default_run_dir(plan_name: &str) -> PathBuf {
+    let slug: String = plan_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    PathBuf::from(format!("wm-runs/{slug}-{ms}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runner::Verdict;
     use std::io::Write;
 
     fn write_tmp(content: &str) -> tempfile::NamedTempFile {
@@ -301,6 +408,91 @@ mod tests {
     fn client_trims_trailing_slashes() {
         let c = ControllerClient::new("http://127.0.0.1:7600//");
         assert_eq!(c.base, "http://127.0.0.1:7600");
+    }
+
+    fn write_plan(dir: &Path, spectrum_abs: &str) -> std::path::PathBuf {
+        let body = format!(
+            "[meta]\nname = \"cmdtest\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{spectrum_abs}\"\nconcurrency = 2\nduration_secs = 60\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n"
+        );
+        let p = dir.join("plan.toml");
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn test_validate_accepts_a_good_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = write_tmp(GOOD);
+        let plan_path = write_plan(dir.path(), &spec.path().display().to_string());
+        let plan = test_validate(&plan_path).unwrap();
+        assert_eq!(plan.meta.name, "cmdtest");
+    }
+
+    #[test]
+    fn test_validate_rejects_error_violations() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan_path = dir.path().join("bad.toml");
+        std::fs::write(&plan_path, "steps = []\n\n[meta]\nname = \"x\"\n").unwrap();
+        let err = test_validate(&plan_path).unwrap_err();
+        assert!(matches!(err, CommandError::Invalid), "got {err:?}");
+    }
+
+    #[test]
+    fn test_run_stub_backend_writes_the_run_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("run");
+        let spec = write_tmp(GOOD);
+        let plan_path = write_plan(dir.path(), &spec.path().display().to_string());
+        let outcome = test_run(TestRunOptions {
+            plan_path,
+            backend: RunBackend::Stub,
+            controller: "http://127.0.0.1:1".into(),
+            basin_url: None,
+            time_scale: 0.0,
+            out_dir: Some(out.clone()),
+        })
+        .unwrap();
+        assert_eq!(outcome.verdict, Verdict::Passed);
+        assert_eq!(outcome.backend, "stub");
+        assert_eq!(
+            outcome.run_dir.as_deref(),
+            Some(out.to_string_lossy().as_ref())
+        );
+        for name in [
+            "plan.toml",
+            "events.jsonl",
+            "metrics.json",
+            "asserts.json",
+            "run.json",
+            "report.md",
+        ] {
+            assert!(out.join(name).exists(), "missing {name}");
+        }
+    }
+
+    #[test]
+    fn test_run_rejects_scale_on_controller_backend() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = write_tmp(GOOD);
+        let plan_path = write_plan(dir.path(), &spec.path().display().to_string());
+        let err = test_run(TestRunOptions {
+            plan_path,
+            backend: RunBackend::Controller,
+            controller: "http://127.0.0.1:1".into(),
+            basin_url: None,
+            time_scale: 0.5,
+            out_dir: None,
+        })
+        .unwrap_err();
+        assert!(matches!(err, CommandError::Invalid), "got {err:?}");
+    }
+
+    #[test]
+    fn default_run_dir_slugs_the_plan_name() {
+        let d = default_run_dir("Smoke / demo!");
+        let s = d.to_string_lossy();
+        let rest = s.strip_prefix("wm-runs/Smoke___demo_-").unwrap();
+        assert!(rest.parse::<u64>().is_ok(), "timestamp suffix, got {s}");
     }
 
     #[test]

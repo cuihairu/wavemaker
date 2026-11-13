@@ -416,8 +416,10 @@ mod tests {
     }
 
     fn write_plan(dir: &Path, spectrum_abs: &str) -> std::path::PathBuf {
+        // Forward slashes: a Windows path's backslashes are TOML escapes.
+        let spectrum = spectrum_abs.replace('\\', "/");
         let body = format!(
-            "[meta]\nname = \"cmdtest\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{spectrum_abs}\"\nconcurrency = 2\nduration_secs = 60\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n"
+            "[meta]\nname = \"cmdtest\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{spectrum}\"\nconcurrency = 2\nduration_secs = 60\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n"
         );
         let p = dir.join("plan.toml");
         std::fs::write(&p, body).unwrap();

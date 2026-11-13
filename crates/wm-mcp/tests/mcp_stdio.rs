@@ -70,11 +70,12 @@ async fn mcp_stdio_end_to_end_initialize_list_call() -> anyhow::Result<()> {
     let spec = tmp.path().join("spec.yaml");
     std::fs::write(&spec, RAMP_YAML)?;
     let plan = tmp.path().join("plan.toml");
+    // Forward slashes: a Windows path's backslashes are TOML escapes.
+    let spectrum = spec.display().to_string().replace('\\', "/");
     std::fs::write(
         &plan,
         format!(
-            "[meta]\nname = \"stdio-demo\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{}\"\nconcurrency = 1\nduration_secs = 30\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n",
-            spec.display()
+            "[meta]\nname = \"stdio-demo\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{spectrum}\"\nconcurrency = 1\nduration_secs = 30\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n"
         ),
     )?;
     let run_dir = tmp.path().join("stdio-run");

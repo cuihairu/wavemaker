@@ -1560,7 +1560,9 @@ params = { secs = 1 }
             &plan_file,
             CONTROLLER_PLAN
                 .replace("__HEALTHZ__", &format!("{base}/healthz"))
-                .replace("__SPEC__", &spec.display().to_string()),
+                // Forward slashes: a Windows path's backslashes are TOML
+                // escapes; the engine accepts both separators.
+                .replace("__SPEC__", &spec.display().to_string().replace('\\', "/")),
         )
         .unwrap();
         let out = dir.path().join("run");

@@ -157,7 +157,13 @@ mod tests {
 
     #[test]
     fn resolve_spectra_anchors_relative_paths_at_the_plan_dir() {
-        let mut plan = parse_plan(
+        // A genuinely absolute path for the platform (backslashes would be
+        // TOML escapes, so the temp dir goes in with forward slashes).
+        let abs = std::env::temp_dir()
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let mut plan = parse_plan(&format!(
             r#"
 [meta]
 name = "demo"
@@ -165,14 +171,14 @@ name = "demo"
 [[steps]]
 id = "load"
 action = "inject_load"
-params = { spectrum = "../spectra/demo.yaml", duration_secs = 60 }
+params = {{ spectrum = "../spectra/demo.yaml", duration_secs = 60 }}
 
 [[steps]]
 id = "pin"
 action = "inject_load"
-params = { spectrum = "/abs/kept.yaml", duration_secs = 60 }
-"#,
-        )
+params = {{ spectrum = "{abs}/kept.yaml", duration_secs = 60 }}
+"#
+        ))
         .unwrap();
         resolve_spectra(&mut plan, Path::new("examples/plans"));
         let specs: Vec<&str> = plan
@@ -180,8 +186,15 @@ params = { spectrum = "/abs/kept.yaml", duration_secs = 60 }
             .iter()
             .filter_map(|s| s.params.spectrum.as_deref())
             .collect();
-        assert_eq!(specs[0], "examples/plans/../spectra/demo.yaml");
-        assert_eq!(specs[1], "/abs/kept.yaml", "absolute path untouched");
+        // Compare as paths: the joined rendering uses the platform
+        // separator (backslash on Windows), the `..` segment stays.
+        let expected = Path::new("examples/plans").join("../spectra/demo.yaml");
+        assert_eq!(Path::new(specs[0]), expected);
+        assert_eq!(
+            specs[1],
+            format!("{abs}/kept.yaml"),
+            "absolute path untouched"
+        );
     }
 
     #[test]

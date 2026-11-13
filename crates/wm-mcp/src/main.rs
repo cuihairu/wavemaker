@@ -686,11 +686,12 @@ mod tests {
         let spec = dir.path().join("spec.yaml");
         std::fs::write(&spec, GOOD).unwrap();
         let plan = dir.path().join("plan.toml");
+        // Forward slashes: a Windows path's backslashes are TOML escapes.
+        let spectrum = spec.display().to_string().replace('\\', "/");
         std::fs::write(
             &plan,
             format!(
-                "[meta]\nname = \"mcp-demo\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{}\"\nconcurrency = 1\nduration_secs = 30\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n",
-                spec.display()
+                "[meta]\nname = \"mcp-demo\"\n\n[[steps]]\nid = \"load\"\naction = \"inject_load\"\n[steps.params]\nspectrum = \"{spectrum}\"\nconcurrency = 1\nduration_secs = 30\n\n[[steps]]\nid = \"snap\"\naction = \"capture\"\n\n[[steps]]\nid = \"ok\"\naction = \"assert\"\n[steps.params]\nmetric = \"error_rate\"\nmax = 0.0\nsource = \"snap\"\n"
             ),
         )
         .unwrap();

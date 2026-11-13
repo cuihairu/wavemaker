@@ -215,7 +215,7 @@ fn run_test_plan_native(
     let mut v =
         serde_json::to_value(&outcome).map_err(|e| format!("result serialization failed: {e}"))?;
     if let Some(dir) = &outcome.run_dir {
-        v["report_path"] = Value::String(format!("{dir}/report.md"));
+        v["report_path"] = Value::String(Path::new(dir).join("report.md").display().to_string());
     }
     Ok(v)
 }

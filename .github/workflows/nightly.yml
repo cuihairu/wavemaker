@@ -8,6 +8,8 @@
 # Silicon). The Windows/macOS legs are first-run faces: compile + unit-test
 # verification; PLATFORM-NOTES in each package says what was and was not
 # accepted (no real-game-server end-to-end on those platforms yet).
+# macos-15 (not macos-14 — that image retired from GitHub Actions on
+# 2026-11-02); the plain label is arm64.
 name: nightly
 
 on:
@@ -58,7 +60,7 @@ jobs:
           - { os: ubuntu-latest, name: linux-x86_64 }
           - { os: ubuntu-24.04-arm, name: linux-aarch64 }
           - { os: windows-latest, name: windows-x86_64 }
-          - { os: macos-14, name: macos-aarch64 }
+          - { os: macos-15, name: macos-aarch64 }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -125,6 +127,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "FAIL: bad config validated with exit 0"
           }
+          # pwsh propagates the last native exit code as the process exit
+          # code; the rejection above is intentional, so end explicitly.
+          exit 0
       - name: Stage (Linux)
         if: runner.os == 'Linux'
         run: |

@@ -8,6 +8,7 @@ pub mod backend;
 pub mod hdr;
 pub mod spectrum;
 pub mod store;
+pub mod testplan;
 
 use std::fmt;
 

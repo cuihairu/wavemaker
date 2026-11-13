@@ -53,6 +53,13 @@ Task checklist from the phased implementation plan (Phase 0–6). Keep WM task I
 - [x] WM-DB-9: Dispatch by hand once and verify the `nightly` Release shows fresh assets; confirm no version tag appeared. *(run 42494394105 全绿；nightly Release 6 assets、draft=false、publishedAt 2026-11-08T15:33:01Z；下载 x86_64 二进制实测 --version=wm 0.1.0、sha256 匹配、validate 通过；无版本 tag，仅 refs/tags/nightly)*
 - [x] WM-DB-10: Add a README section pointing at the Releases page with an asset→platform table. *(README.md + README.zh.md「每日构建」节)*
 
+## Phase 1.6: Test Plan（验证步骤抽象 / Declarative Test Plans）
+
+<!-- 用户令（2026-11-13）：把「一次游戏压测验证」表达为可复用、可声明式描述、可出报告的步骤抽象，
+     demo 先验：stub 后端闭环 + 三个示例计划 + README 快速开始。按块分三个 commit。 -->
+
+- [x] WM-TP-1: Declarative TestPlan model in wm-core (parse/validate/judge, zero IO). — 2026-11-14 落地 `crates/wm-core/src/testplan.rs`（18 测试）。TOML 与 Spectrum 同文档风格：`[meta]`(name/game/engine) + 有序 `[[steps]]`，每步恰好 `{id, action, params}`（serde `deny_unknown_fields`——拼错的参数键是具名解析错误而非静默默认；已知键放错 action 由 validate 报 `E_PARAM_NOT_APPLICABLE`）。首批 action 八个：prepare/inject_load/hold/step_load/capture/assert/cooldown/report；断言指标五个：latency_p99_ms(caps)/error_rate(0..1 caps)/throughput( floors, min-only)/disconnect_recovery_secs(caps)/memory_growth_mb_per_hour(泄漏趋势=匹配快照内存序列最小二乘斜率 MB/h)——方向由 validate 强制（`E_ASSERT_BOUND_DIRECTION`/`E_ASSERT_NO_BOUND`/`E_ASSERT_BOUNDS_CROSSED`）。判定语义：assert 按 `source`(产出步 id) 匹配快照、缺省匹配全部；单值指标任一快照越界即 FAIL(observed 报最差值)；无匹配快照或指标缺席 → `NotApplicable`（缺数据源永不算 PASS）；step_load 逐级自动快照（capture_per_level 默认 true, level 索引入快照）。计划级 `continue_on_assert_fail` 默认 false(fail-fast)，只影响执行序、不影响判定。`MetricsSnapshot` 指标全 Option——来源给不出的指标如实缺席。确定性可复跑钩子：inject_load `expect_sha256` 可钉 spectrum 内容哈希。校验代码可解释（Spectrum §6 风格, PlanViolation 自有 String field 路径——spectrum Violation 的 field 是 &'static str, 步路径动态, 不复用不改动）；`W_PLAN_NO_DATA` 警告「有 assert 无快照产出步」。本条勾选随实现同一 commit（feat: add declarative test plan model——单 commit 令下不自引不存在的哈希）。wm-core 66 绿。
+
 ## Phase 2: KBEngine Bridge MVP
 
 - [x] WM-0201: Create the KBEngine Bridge Python bootstrap. *(engine-adapters/kbengine/bridge/bootstrap.py——Bootstrap 状态机 standby→running→stopped（on_init 二次调用守卫 §8.1 S6）、单次 100ms 泵（KBEngine.callback 恰 2 参，经 engine_port.py:32 端口；泵异常打印吞掉后照常重臂 §8.1 S3）、BootstrapConfig 四环境变量注入（WAVEMAKER_BRIDGE_IPC/TOKEN/SWELL_ID/BACKEND_ID）；capability.py 诚实能力目录（exact_arrival=degraded + arrival_batch_ms=1000/resolution_ms=100，§8.1 S8）；engine-adapters/kbengine/kbemain.py 入口脚本 onInit(0)/onFinish 委托；tests/test_bootstrap.py 10 unit tests 经 FakeEngine 端口，无引擎运行时依赖)*

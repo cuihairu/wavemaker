@@ -64,8 +64,10 @@ A new build lands daily (05:17 CST). Choose your asset:
 |---|---|---|
 | `wavemaker-linux-x86_64` | Linux x86_64 | `./wavemaker-linux-x86_64 --version` |
 | `wavemaker-linux-aarch64` | Linux ARM64 | `./wavemaker-linux-aarch64 --version` |
+| `wavemaker-windows-x86_64.zip` | Windows x86_64 (`wm.exe`, `wm-mcp.exe`) | expand, then `./wm.exe --version` |
+| `wavemaker-macos-aarch64.tar.gz` | macOS Apple Silicon (`wm`, `wm-mcp`) | `tar -xzf …` then `xattr -d com.apple.quarantine wm && ./wm --version` |
 
-Each asset ships with a `.sha256` checksum; the latest build is always the only copy (older builds are replaced, never accumulated). Binaries are unsigned — SmartScreen/Gatekeeper may warn.
+Each asset ships with a `.sha256` checksum and a `PLATFORM-NOTES-*.txt`; the latest build is always the only copy (older builds are replaced, never accumulated). Binaries are unsigned — SmartScreen/Gatekeeper may warn. The Linux legs are the mature ones; the Windows/macOS legs are compile + unit-test verified only and are not yet end-to-end accepted against a real game server on those platforms (each PLATFORM-NOTES says so).
 
 ## License
 

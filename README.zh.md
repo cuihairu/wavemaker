@@ -62,8 +62,10 @@ wm test run examples/plans/smoke.toml --time-scale 0
 |---|---|---|
 | `wavemaker-linux-x86_64` | Linux x86_64 | `./wavemaker-linux-x86_64 --version` |
 | `wavemaker-linux-aarch64` | Linux ARM64 | `./wavemaker-linux-aarch64 --version` |
+| `wavemaker-windows-x86_64.zip` | Windows x86_64（`wm.exe`、`wm-mcp.exe`） | 解压后 `./wm.exe --version` |
+| `wavemaker-macos-aarch64.tar.gz` | macOS Apple Silicon（`wm`、`wm-mcp`） | `tar -xzf …` 后 `xattr -d com.apple.quarantine wm && ./wm --version` |
 
-每个资产附带 `.sha256` 校验和；只保留最新一份构建（旧的会被替换，不会累积）。二进制未签名——SmartScreen/Gatekeeper 可能告警。
+每个资产附带 `.sha256` 校验和与 `PLATFORM-NOTES-*.txt`；只保留最新一份构建（旧的会被替换，不会累积）。二进制未签名——SmartScreen/Gatekeeper 可能告警。Linux 两腿是成熟腿；Windows/macOS 两腿目前只验证到编译 + 单测面，尚未在对应平台上对真实游戏服务器做端到端验收（各自的 PLATFORM-NOTES 有说明）。
 
 ## 许可证
 

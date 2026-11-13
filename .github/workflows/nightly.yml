@@ -2,6 +2,12 @@
 # Delivery surface is the single rolling `nightly` GitHub Release, never a
 # version tag. A scheduled build publishes; workflow_dispatch is the manual
 # immediate-build path (and always builds, bypassing the gate).
+#
+# Four legs: linux-x86_64, linux-aarch64 (bare binaries), windows-x86_64
+# (zip: wm.exe + wm-mcp.exe) and macos-aarch64 (tar.gz: wm + wm-mcp, Apple
+# Silicon). The Windows/macOS legs are first-run faces: compile + unit-test
+# verification; PLATFORM-NOTES in each package says what was and was not
+# accepted (no real-game-server end-to-end on those platforms yet).
 name: nightly
 
 on:
@@ -51,15 +57,35 @@ jobs:
         include:
           - { os: ubuntu-latest, name: linux-x86_64 }
           - { os: ubuntu-24.04-arm, name: linux-aarch64 }
+          - { os: windows-latest, name: windows-x86_64 }
+          - { os: macos-14, name: macos-aarch64 }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
+      - name: Install protoc (apt)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Build release
+      - name: Install protoc (choco)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y --no-progress
+      - name: Install protoc (brew)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Build release (full workspace)
+        if: runner.os != 'Windows'
         run: cargo build --workspace --release
+      - name: Build release (CLI + MCP)
+        if: runner.os == 'Windows'
+        run: cargo build --release -p wm-cli -p wm-mcp
+      - name: Unit tests (workspace)
+        if: runner.os == 'macOS'
+        run: cargo test --release --workspace
+      - name: Unit tests (CLI + MCP)
+        if: runner.os == 'Windows'
+        run: cargo test --release -p wm-cli -p wm-mcp
       - name: Smoke gate
+        if: runner.os != 'Windows'
         run: |
           set -e
           ./target/release/wm --version
@@ -70,7 +96,37 @@ jobs:
             echo "FAIL: bad config validated with exit 0" >&2
             exit 1
           fi
-      - name: Stage
+      - name: Smoke gate (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = "Stop"
+          @'
+          arrival:
+            ramp:
+              from_per_second: 1
+              to_per_second: 20
+              duration_secs: 600
+          lifetime:
+            distribution: exponential
+            mean_secs: 900
+          saturation_policy: queue
+          '@ | Set-Content -Path "$env:TEMP\good.yaml"
+          & ./target/release/wm.exe --version
+          & ./target/release/wm.exe validate "$env:TEMP\good.yaml"
+          if ($LASTEXITCODE -ne 0) {
+            throw "FAIL: good config did not validate (exit $LASTEXITCODE)"
+          }
+          @'
+          lifetime:
+            distribution: fixed
+            mean_secs: 900
+          '@ | Set-Content -Path "$env:TEMP\bad.yaml"
+          & ./target/release/wm.exe validate "$env:TEMP\bad.yaml"
+          if ($LASTEXITCODE -eq 0) {
+            throw "FAIL: bad config validated with exit 0"
+          }
+      - name: Stage (Linux)
+        if: runner.os == 'Linux'
         run: |
           set -e
           mkdir -p dist
@@ -85,6 +141,53 @@ jobs:
             echo "verify:   ./wavemaker-${{ matrix.name }} --version"
             echo "caveat:   unsigned binary — SmartScreen/Gatekeeper may warn"
           } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
+      - name: Stage (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          mkdir -p dist
+          tar -czf "dist/wavemaker-${{ matrix.name }}.tar.gz" -C target/release wm wm-mcp
+          cd dist
+          shasum -a 256 "wavemaker-${{ matrix.name }}.tar.gz" > "wavemaker-${{ matrix.name }}.tar.gz.sha256"
+          {
+            echo "Wavemaker nightly build"
+            echo "platform: ${{ matrix.name }} (Apple Silicon)"
+            echo "built:    $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "commit:   ${GITHUB_SHA}"
+            echo "contents: wm, wm-mcp (inside the tar.gz)"
+            echo "verify:   tar -xzf wavemaker-${{ matrix.name }}.tar.gz && ./wm --version"
+            echo "sha256:   shasum -a 256 wavemaker-${{ matrix.name }}.tar.gz"
+            echo "quarantine: first launch may need: xattr -d com.apple.quarantine wm"
+            echo "scope:    first-run leg — compile + full workspace unit tests only;"
+            echo "          not yet end-to-end accepted against a real game server on macOS"
+            echo "caveat:   unsigned binary — Gatekeeper may warn"
+          } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
+      - name: Stage (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/wm.exe dist/
+          Copy-Item target/release/wm-mcp.exe dist/
+          Compress-Archive -Path dist/wm.exe, dist/wm-mcp.exe `
+            -DestinationPath "dist/wavemaker-${{ matrix.name }}.zip" -Force
+          Remove-Item dist/wm.exe, dist/wm-mcp.exe
+          $hash = (Get-FileHash "dist/wavemaker-${{ matrix.name }}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  wavemaker-${{ matrix.name }}.zip" |
+            Out-File "dist/wavemaker-${{ matrix.name }}.zip.sha256" -Encoding ascii
+          @"
+          Wavemaker nightly build
+          platform: ${{ matrix.name }}
+          built:    $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm UTC'))
+          commit:   $env:GITHUB_SHA
+          contents: wm.exe, wm-mcp.exe (inside the zip)
+          verify:   expand the zip, then .\wm.exe --version
+          sha256:   Get-FileHash wavemaker-${{ matrix.name }}.zip -Algorithm SHA256
+          scope:    first-run leg — compile + unit tests (wm-cli, wm-mcp) only;
+                    the server-side components are not packaged for Windows yet;
+                    not yet end-to-end accepted against a real game server on Windows
+          caveat:   unsigned binary — SmartScreen may warn
+          "@ | Out-File "dist/PLATFORM-NOTES-${{ matrix.name }}.txt" -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.name }}
@@ -117,7 +220,7 @@ jobs:
           gh release create "$tag" pkgs/* \
             --target "$GITHUB_SHA" \
             --title "nightly $(date -u +%Y-%m-%d)" \
-            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 + SHA256SUMS. This is a rolling prerelease binary, not a versioned release." || true
+            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. The Windows/macOS legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release." || true
           # never leave a draft as the delivery surface
           gh release edit "$tag" --draft=false 2>/dev/null || true
           # assert the publish actually landed (green-but-unshipped must fail)
@@ -138,6 +241,6 @@ jobs:
           {
             echo "## Wavemaker nightly"
             echo "- rolling Release **nightly** (only copy; history cleaned)"
-            echo "- assets: \`wavemaker-linux-x86_64\`, \`wavemaker-linux-aarch64\`, SHA256SUMS"
+            echo "- assets: \`wavemaker-linux-x86_64\`, \`wavemaker-linux-aarch64\`, \`wavemaker-windows-x86_64.zip\`, \`wavemaker-macos-aarch64.tar.gz\` + per-asset \`.sha256\` + PLATFORM-NOTES"
             echo "- download: https://github.com/cuihairu/wavemaker/releases/tag/nightly"
           } >> "$GITHUB_STEP_SUMMARY"

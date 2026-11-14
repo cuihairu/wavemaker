@@ -24,7 +24,7 @@ The complete technical design and implementation plan is published at **https://
 
 ## Status
 
-Wavemaker is in the active-build stage. Phase 0 (semantics) and Phase 1 (protocol + minimal control plane) are implemented and tested; the phased roadmap (Phase 0–6) in the documentation defines what gets built and in what order.
+Wavemaker is in the active-build stage. Every Phase 0–6 task tracked in [`todo.md`](todo.md) is checked off — semantics, protocol and control plane, the KBEngine Bridge, the native Rust runtime, observability, the assertion provider, the distributed/recovery plane, and the Tauri desktop dashboard (`desktop/`). The phased roadmap in the documentation is the plan snapshot; `todo.md` is the source of truth for status.
 
 An MCP server (`crates/wm-mcp`, stdio via the official rmcp SDK) exposes `list_runs`, `query_status`, `validate_spectrum`, `load_timeline`, `run_scenario`, `run_test_plan` and `get_test_report` to AI agents; see [crates/wm-mcp/README.md](crates/wm-mcp/README.md).
 

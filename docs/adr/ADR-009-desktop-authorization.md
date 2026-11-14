@@ -13,7 +13,7 @@ WM-0600 已拍板桌面形态 = Tauri（`desktop/`，WM-0601 落地），Phase 6
 
 ## Decision（决策）
 
-1. **权限面落在桌面壳（`desktop/src-tauri`）与引擎侧决策函数（`wm-desktop` 的 `authz` 模块）**，controller REST/gRPC 保持无认证的单操作员形态（Phase 1 现状不动）。桌面是本地信任边界（本机桌面应用），不引入网络认证面、会话、cookie/token 传输——那属于 Phase 1 控制面之外的未来工作。
+1. **权限面落在桌面壳（`desktop/src-tauri`，crate 名 `wavemaker-desktop`）与引擎侧决策函数（`desktop/src-tauri/src/authz.rs`）**，controller REST/gRPC 保持无认证的单操作员形态（Phase 1 现状不动）。桌面是本地信任边界（本机桌面应用），不引入网络认证面、会话、cookie/token 传输——那属于 Phase 1 控制面之外的未来工作。
 2. **三个角色（WM-0607 指定）**：`admin`（全权，含用户管理）、`operator`（日常操作：启停 Swell、清理 bot、应用计划、修改配置/频谱）、`viewer`（只读）。角色即权限矩阵的行；不发明第四个角色。
 3. **权限矩阵（每角色 × 每操作，允许/拒绝）**：
 
@@ -29,7 +29,7 @@ WM-0600 已拍板桌面形态 = Tauri（`desktop/`，WM-0601 落地），Phase 6
 
    高风险动作（stop/clean_up/apply_plan）在 WM-0608 的审计里记录操作者与理由（`docs/security.md`）；本 ADR 只定义**谁被允许**，记录由 WM-0608 承担。
 4. **登录**：本地用户名 + 口令，口令以加盐哈希（SHA-256，迭代）存入 `users.json`（`docs/security.md`「Tokens, passwords, or account credentials are never written to logs」——只存哈希、绝不写日志、绝不发明传输凭据）。未登录时任何操作均拒绝（`not_authenticated`）。**首次引导（bootstrap）**：空 `users.json` 上的第一次登录即以所输入凭据创建第一个 `admin` 账户并直接登录——否则新安装陷入死锁（`create_user` 需要 admin 会话，而会话需要已有用户）。引导只发生在**空库**上（非空库上的未知用户照常拒绝，不构成接管路径），测试双向钉死。
-5. **诚实边界**：`check_permission` 是引擎侧权威决策；前端渲染矩阵与禁用未授权操作只是表现层，判定权始终在 Rust 侧。controller REST 无认证这一事实在 UI 里如实标注（「控制面为本地信任边界，无网络认证」），不发明网络认证通道。
+5. **诚实边界**：`authz::allowed`（未登录时由 `authz::gate` 先拒绝）是引擎侧权威决策；前端渲染矩阵与禁用未授权操作只是表现层，判定权始终在 Rust 侧。controller REST 无认证这一事实在 UI 里如实标注（「控制面为本地信任边界，无网络认证」），不发明网络认证通道。
 
 ## Consequences（后果）
 

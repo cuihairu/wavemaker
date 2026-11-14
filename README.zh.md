@@ -24,7 +24,7 @@ Wavemaker 通过统一的负载模型（Spectrum）、声明式测试计划（Te
 
 ## 状态
 
-Wavemaker 处于持续构建阶段。Phase 0（语义）与 Phase 1（协议 + 最小控制面）已实现并有测试覆盖；文档中的分阶段路线图（Phase 0–6）定义了实现顺序。
+Wavemaker 处于持续构建阶段。[`todo.md`](todo.md) 中 Phase 0–6 的全部任务均已勾选——语义、协议与控制面、KBEngine Bridge、自写 Rust 运行时、观测、断言 Provider、分布式与恢复面，以及 Tauri 桌面仪表盘（`desktop/`）。文档里的分阶段路线图是计划快照，状态以 `todo.md` 为准。
 
 MCP 服务器（`crates/wm-mcp`，基于官方 rmcp SDK 的 stdio 传输）向 AI agent 暴露 `list_runs`、`query_status`、`validate_spectrum`、`load_timeline`、`run_scenario`、`run_test_plan` 与 `get_test_report` 七个工具；详见 [crates/wm-mcp/README.md](crates/wm-mcp/README.md)。
 

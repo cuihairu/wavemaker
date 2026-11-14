@@ -50,4 +50,4 @@
 - 「计划负载 vs 实际到达」可逐条对比，支撑报告第 3 节（Planned vs Actual Arrival）与 Test Validity 判定（计划书 §13.2 / §16.3）。
 - 计划转换（逐 Bot → 批次）必须保存前后信息，报告可展示转换造成的精度损失（如 Engine Bot 的 batch_arrival 调度分辨率）。
 - 分片规则变更、重分配、去重均需 conformance test 覆盖；不能靠「接口已预留」代替可运行测试（计划书 §21）。
-- PlanEntry 的 Protobuf 消息初稿属于 Phase 1 WM-0102；`i mod W` 的验证属于 Phase 5 分布式分片实现（WM-0504）。
+- PlanEntry 字段集由 `crates/wm-controller/src/shard_plan.rs` 的 Rust 结构体承载；Phase 1 的跨进程契约（`proto/backend/v1/backend_service.proto` `ApplyPlanRequest`）只传 `plan_digest` 与不透明 `plan_payload` 字节，PlanEntry **没有独立的 Protobuf 消息**（WM-0102 已勾选，冻结的是 5 个 v1 proto 包，不含 PlanEntry）。`i mod W` 的验证属于 Phase 5 分布式分片实现（WM-0504，已落地为 `shard_plan.rs` 的 `arrival_index mod W`，仍以候选身份记录、未宣称最优）。

@@ -1,7 +1,7 @@
 # ADR-007: Assertion Provider——业务断言外置与调度
 
 > 状态：Accepted
-> 来源：用户需求（新增能力方向）+ 设计文档 docs/spec/assertion-provider.md。报告扩展落点为 schemas/report/v1.json 第 15 节与 todo.md Phase 7。
+> 来源：用户需求（新增能力方向）+ 设计文档 docs/spec/assertion-provider.md。报告扩展落点为 schemas/report/v1.json 第 15 节与 todo.md Phase 4.5（`todo.md:133`；`af31667` 新建该标题时即写作 Phase 4.5，仓库内从无 Phase 7 标题——提交信息里的 “Phase 7” 只是当时对本 ADR 措辞的引用）。
 
 ## Context（背景）
 
@@ -44,5 +44,5 @@ Wavemaker 是压测框架：若把业务规则内置进核心，框架将被单�
 ## Consequences（后果）
 
 - 断言结果的质量与 Provider 实现强相关：Provider 挂了只能得到 `inconclusive`，这会被如实记录为覆盖缺口而不是被掩盖。
-- Schema、报告模板、双语文档站、todo.md（Phase 7，WM-0701 起）需同步；本 ADR 与 docs/spec/assertion-provider.md 为其唯一规范来源。
-- Schema 扩展已随本 ADR 落地（24 项单测覆盖 R5 与三态语义）；Provider 协议、执行窗口调度、证据归档属于 Phase 7 实现（WM-0702 起），未实现前不得在报告里手写 `assertions` 节以外的断言结论。
+- Schema、报告模板、双语文档站、todo.md（Phase 4.5，WM-0701 起）需同步；本 ADR 与 docs/spec/assertion-provider.md 为其唯一规范来源。
+- Schema 扩展已随本 ADR 落地（24 项单测覆盖 R5 与三态语义）；Provider 协议、执行窗口调度与证据归档已实现（`crates/wm-basin/src/assertions.rs` / `assertion_scheduler.rs` / `assertion_transport.rs` / `evidence.rs` / `assertion_report.rs`，todo.md Phase 4.5 WM-0701…WM-0705 全部勾选，2026-11-10）。落地后仍不得在报告里手写 `assertions` 节以外的断言结论。

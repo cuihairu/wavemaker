@@ -6,6 +6,12 @@ title: 配置设计草案
 
 以下仅展示配置分层，不代表字段最终冻结。
 
+已实现的 Spectrum schema 见 `crates/wm-core/src/spectrum.rs`——键为
+`arrival.ramp.{from,to}_per_second` / `duration_secs`、
+`lifetime.{distribution,mean_secs}`、`concurrency.{target,max}` 与
+`saturation_policy`，用户面权威示例见
+[test-plan](./test-plan.md)。下方草案有意滞后于该形态。
+
 ## 14.1 Swell
 
 ```yaml

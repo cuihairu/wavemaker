@@ -4,6 +4,14 @@ title: Roadmap
 
 # Phased Implementation Plan
 
+> Task checkboxes below are the plan snapshot from the design phase and are
+> intentionally left unticked — they record scope, not status. `todo.md` is
+> the single source of truth for completion, and it has moved well past
+> Phase 1 (through Phase 6 as of 2026-11-12). Phase 6 in particular is no
+> longer gated on "the product form requires it": WM-0600 settled on Tauri
+> and WM-0601…WM-0608 have since landed in `desktop/` (see
+> `docs/adr/ADR-008-v1-dashboard-scope.md` and `ADR-009`).
+
 ## Phase 0: Semantic Closure and Technical Verification
 
 **Goal: remove architecture-level uncertainty before scaling up.**
@@ -232,7 +240,10 @@ Exit criteria:
 
 ## Phase 6: Dashboard and Extension Ecosystem
 
-**Started only when the v1 product form requires it.**
+**Started only when the v1 product form requires it.** — Gate released: WM-0600
+picked Tauri on 2026-11-10 and WM-0601…WM-0608 have landed in `desktop/`. The
+task list below is the original plan snapshot; see `todo.md` for completion
+state.
 
 Tasks:
 

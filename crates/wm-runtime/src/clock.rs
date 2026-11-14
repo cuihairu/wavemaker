@@ -152,11 +152,16 @@ mod tests {
 
     #[test]
     fn real_clock_moves_forward_and_is_monotonic() {
+        // A fresh RealClock may legitimately read ~0 (coarse clock tick),
+        // so never assert on absolute readings — only on the relations
+        // between successive ones.
         let clock = RealClock::new();
         let first = clock.now_nanos();
         std::thread::sleep(std::time::Duration::from_millis(2));
         let second = clock.now_nanos();
         assert!(second > first, "real clock must move forward");
-        assert_ne!(first, 0, "real clock elapsed > 0 after sleep");
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let third = clock.now_nanos();
+        assert!(third >= second, "real clock must never go backwards");
     }
 }

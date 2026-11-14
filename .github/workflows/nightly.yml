@@ -200,9 +200,10 @@ jobs:
             echo "          inside the tarball); verified by xvfb window smoke only"
           } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
           # Desktop (Tauri): bare binary + dependency list (AppImage is a
-          # later phase).
-          mkdir -p desktop-pkg
-          cp "../desktop/src-tauri/target/release/wavemaker-desktop" desktop-pkg/wavemaker-desktop
+          # later phase). The staging dir must live outside dist/ — anything
+          # left there gets uploaded as a release asset.
+          pkgtmp=$(mktemp -d)
+          cp "../desktop/src-tauri/target/release/wavemaker-desktop" "$pkgtmp/wavemaker-desktop"
           {
             echo "Wavemaker nightly desktop (Tauri GUI)"
             echo "commit: ${GITHUB_SHA}"
@@ -211,8 +212,9 @@ jobs:
             echo "run: ./wavemaker-desktop   (window titled Wavemaker)"
             echo "scope: first-run face — compiled plus an xvfb window smoke"
             echo "       (window appears); not yet accepted on a real desktop session"
-          } > desktop-pkg/DEPENDENCIES.txt
-          tar -czf "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz" -C desktop-pkg wavemaker-desktop DEPENDENCIES.txt
+          } > "$pkgtmp/DEPENDENCIES.txt"
+          tar -czf "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz" -C "$pkgtmp" wavemaker-desktop DEPENDENCIES.txt
+          rm -rf "$pkgtmp"
           sha256sum "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz" > "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz.sha256"
       - name: Stage (macOS)
         if: runner.os == 'macOS'

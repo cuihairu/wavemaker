@@ -8,6 +8,9 @@
 # Silicon). The Windows/macOS legs are first-run faces: compile + unit-test
 # verification; PLATFORM-NOTES in each package says what was and was not
 # accepted (no real-game-server end-to-end on those platforms yet).
+# Each leg also builds the desktop (Tauri) app: bare binary tar.gz on
+# Linux (webkit2gtk runtime deps listed inside; xvfb window smoke),
+# msi on Windows (WebView2), dmg on macOS (unsigned — Gatekeeper note).
 # macos-15 (not macos-14 — that image retired from GitHub Actions on
 # 2026-11-02); the plain label is arm64.
 name: nightly
@@ -65,9 +68,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install protoc (apt)
+        with:
+          # Root workspace plus the standalone desktop crate (own lockfile
+          # and target dir — carved out of the root workspace, WM-0601).
+          workspaces: |
+            .
+            desktop/src-tauri
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - name: Install protoc + desktop system libs (apt)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool
       - name: Install protoc (choco)
         if: runner.os == 'Windows'
         run: choco install protoc -y --no-progress
@@ -130,6 +142,44 @@ jobs:
           # pwsh propagates the last native exit code as the process exit
           # code; the rejection above is intentional, so end explicitly.
           exit 0
+      - name: Desktop web deps (pnpm)
+        run: pnpm --dir desktop/web install --frozen-lockfile
+      # tauri build runs the configured beforeBuildCommand (vite build) and
+      # then cargo-builds the standalone desktop crate with the bundled
+      # frontend (custom-protocol). dlx's first args go straight to the
+      # tauri bin — the subcommand is `build`, not `tauri build`.
+      - name: Build desktop (Linux, bare binary)
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        run: pnpm dlx '@tauri-apps/cli@^2' build --no-bundle
+      - name: Build desktop (Windows msi)
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        run: pnpm dlx '@tauri-apps/cli@^2' build --bundles msi
+      - name: Build desktop (macOS dmg)
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: pnpm dlx '@tauri-apps/cli@^2' build --bundles dmg
+      - name: Desktop smoke (window appears under xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          xvfb-run -a bash -c '
+            ./desktop/src-tauri/target/release/wavemaker-desktop &
+            APP_PID=$!
+            sleep 8
+            if ! kill -0 $APP_PID 2>/dev/null; then
+              echo "FAIL: desktop app exited early" >&2
+              exit 1
+            fi
+            if ! xdotool search --name "Wavemaker" >/dev/null; then
+              echo "FAIL: no Wavemaker window" >&2
+              kill $APP_PID 2>/dev/null || true
+              exit 1
+            fi
+            echo "OK: Wavemaker window is up"
+            kill $APP_PID 2>/dev/null || true
+          '
       - name: Stage (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -145,7 +195,25 @@ jobs:
             echo "commit:   ${GITHUB_SHA}"
             echo "verify:   ./wavemaker-${{ matrix.name }} --version"
             echo "caveat:   unsigned binary — SmartScreen/Gatekeeper may warn"
+            echo "desktop:  wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz — Tauri GUI,"
+            echo "          runtime needs webkit2gtk-4.1/gtk3 (list in DEPENDENCIES.txt"
+            echo "          inside the tarball); verified by xvfb window smoke only"
           } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
+          # Desktop (Tauri): bare binary + dependency list (AppImage is a
+          # later phase).
+          mkdir -p desktop-pkg
+          cp "../desktop/src-tauri/target/release/wavemaker-desktop" desktop-pkg/wavemaker-desktop
+          {
+            echo "Wavemaker nightly desktop (Tauri GUI)"
+            echo "commit: ${GITHUB_SHA}"
+            echo "runtime deps (Debian/Ubuntu package names):"
+            echo "  libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-2"
+            echo "run: ./wavemaker-desktop   (window titled Wavemaker)"
+            echo "scope: first-run face — compiled plus an xvfb window smoke"
+            echo "       (window appears); not yet accepted on a real desktop session"
+          } > desktop-pkg/DEPENDENCIES.txt
+          tar -czf "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz" -C desktop-pkg wavemaker-desktop DEPENDENCIES.txt
+          sha256sum "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz" > "wavemaker-nightly-desktop-${{ matrix.name }}.tar.gz.sha256"
       - name: Stage (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -165,8 +233,13 @@ jobs:
             echo "quarantine: first launch may need: xattr -d com.apple.quarantine wm"
             echo "scope:    first-run leg — compile + full workspace unit tests only;"
             echo "          not yet end-to-end accepted against a real game server on macOS"
+            echo "desktop:  wavemaker-nightly-desktop-macos-aarch64.dmg — Tauri GUI, unsigned;"
+            echo "          right-click Open on first launch (Gatekeeper). Build + package"
+            echo "          sanity only — not yet click-tested on macOS"
             echo "caveat:   unsigned binary — Gatekeeper may warn"
           } > "PLATFORM-NOTES-${{ matrix.name }}.txt"
+          cp ../desktop/src-tauri/target/release/bundle/dmg/*.dmg "wavemaker-nightly-desktop-${{ matrix.name }}.dmg"
+          shasum -a 256 "wavemaker-nightly-desktop-${{ matrix.name }}.dmg" > "wavemaker-nightly-desktop-${{ matrix.name }}.dmg.sha256"
       - name: Stage (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -188,11 +261,19 @@ jobs:
           contents: wm.exe, wm-mcp.exe (inside the zip)
           verify:   expand the zip, then .\wm.exe --version
           sha256:   Get-FileHash wavemaker-${{ matrix.name }}.zip -Algorithm SHA256
+          desktop:  wavemaker-nightly-desktop-windows-x86_64.msi — Tauri GUI; needs
+                    the WebView2 runtime (preinstalled on Win11 and updated Win10)
           scope:    first-run leg — compile + unit tests (wm-cli, wm-mcp) only;
                     the server-side components are not packaged for Windows yet;
                     not yet end-to-end accepted against a real game server on Windows
-          caveat:   unsigned binary — SmartScreen may warn
+                    desktop msi is build + package sanity only, not yet click-tested
+          caveat:   unsigned binaries — SmartScreen may warn
           "@ | Out-File "dist/PLATFORM-NOTES-${{ matrix.name }}.txt" -Encoding utf8
+          Copy-Item desktop/src-tauri/target/release/bundle/msi/*.msi `
+            "dist/wavemaker-nightly-desktop-${{ matrix.name }}.msi"
+          $dhash = (Get-FileHash "dist/wavemaker-nightly-desktop-${{ matrix.name }}.msi" -Algorithm SHA256).Hash.ToLower()
+          "$dhash  wavemaker-nightly-desktop-${{ matrix.name }}.msi" |
+            Out-File "dist/wavemaker-nightly-desktop-${{ matrix.name }}.msi.sha256" -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.name }}
@@ -226,7 +307,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "nightly $(date -u +%Y-%m-%d)" \
             --prerelease \
-            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. The Windows/macOS legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release." || true
+            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. Desktop (Tauri GUI): wavemaker-nightly-desktop-linux-x86_64.tar.gz and wavemaker-nightly-desktop-linux-aarch64.tar.gz (bare GUI binary + DEPENDENCIES.txt; needs webkit2gtk-4.1, xvfb window-smoke only), wavemaker-nightly-desktop-windows-x86_64.msi (WebView2; build sanity only), wavemaker-nightly-desktop-macos-aarch64.dmg (unsigned — right-click Open; build sanity only). The Windows/macOS CLI legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release." || true
           # never leave a draft as the delivery surface
           gh release edit "$tag" --draft=false 2>/dev/null || true
           # assert the publish actually landed (green-but-unshipped must fail)
@@ -247,6 +328,6 @@ jobs:
           {
             echo "## Wavemaker nightly"
             echo "- rolling Release **nightly** (only copy; history cleaned)"
-            echo "- assets: \`wavemaker-linux-x86_64\`, \`wavemaker-linux-aarch64\`, \`wavemaker-windows-x86_64.zip\`, \`wavemaker-macos-aarch64.tar.gz\` + per-asset \`.sha256\` + PLATFORM-NOTES"
+            echo "- assets: \`wavemaker-linux-x86_64\`, \`wavemaker-linux-aarch64\`, \`wavemaker-windows-x86_64.zip\`, \`wavemaker-macos-aarch64.tar.gz\`, desktop (Tauri): \`wavemaker-nightly-desktop-*\` (linux tar.gz / windows msi / macos dmg) + per-asset \`.sha256\` + PLATFORM-NOTES"
             echo "- download: https://github.com/cuihairu/wavemaker/releases/tag/nightly"
           } >> "$GITHUB_STEP_SUMMARY"

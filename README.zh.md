@@ -64,8 +64,12 @@ wm test run examples/plans/smoke.toml --time-scale 0
 | `wavemaker-linux-aarch64` | Linux ARM64 | `./wavemaker-linux-aarch64 --version` |
 | `wavemaker-windows-x86_64.zip` | Windows x86_64（`wm.exe`、`wm-mcp.exe`） | 解压后 `./wm.exe --version` |
 | `wavemaker-macos-aarch64.tar.gz` | macOS Apple Silicon（`wm`、`wm-mcp`） | `tar -xzf …` 后 `xattr -d com.apple.quarantine wm && ./wm --version` |
+| `wavemaker-nightly-desktop-linux-x86_64.tar.gz` | 桌面版（Tauri GUI），Linux x86_64 | 需 webkit2gtk-4.1——见包内 `DEPENDENCIES.txt`；运行 `./wavemaker-desktop` |
+| `wavemaker-nightly-desktop-linux-aarch64.tar.gz` | 桌面版（Tauri GUI），Linux ARM64 | 同上 |
+| `wavemaker-nightly-desktop-windows-x86_64.msi` | 桌面版（Tauri GUI），Windows x86_64 | 需 WebView2（Win11 自带） |
+| `wavemaker-nightly-desktop-macos-aarch64.dmg` | 桌面版（Tauri GUI），macOS Apple Silicon | 未签名——首次启动右键「打开」 |
 
-每个资产附带 `.sha256` 校验和与 `PLATFORM-NOTES-*.txt`；只保留最新一份构建（旧的会被替换，不会累积）。二进制未签名——SmartScreen/Gatekeeper 可能告警。Linux 两腿是成熟腿；Windows/macOS 两腿目前只验证到编译 + 单测面，尚未在对应平台上对真实游戏服务器做端到端验收（各自的 PLATFORM-NOTES 有说明）。
+每个资产附带 `.sha256` 校验和与 `PLATFORM-NOTES-*.txt`；只保留最新一份构建（旧的会被替换，不会累积）。二进制未签名——SmartScreen/Gatekeeper 可能告警。Linux 两腿是成熟腿；Windows/macOS 两腿目前只验证到编译 + 单测面，尚未在对应平台上对真实游戏服务器做端到端验收（各自的 PLATFORM-NOTES 有说明）。桌面版同样是首跑面：Linux 桌面二进制用 xvfb 窗口冒烟验证（窗口能起），Windows/macOS 桌面包只做到构建 + 包完整性——都还没有在真实桌面环境点验过。
 
 ## 许可证
 

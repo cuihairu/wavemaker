@@ -225,6 +225,7 @@ jobs:
           gh release create "$tag" pkgs/* \
             --target "$GITHUB_SHA" \
             --title "nightly $(date -u +%Y-%m-%d)" \
+            --prerelease \
             --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. The Windows/macOS legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release." || true
           # never leave a draft as the delivery surface
           gh release edit "$tag" --draft=false 2>/dev/null || true

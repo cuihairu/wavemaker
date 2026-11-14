@@ -12,7 +12,7 @@
 
 ## About
 
-Wavemaker generates, manages, and analyzes the load that large numbers of virtual clients apply to game servers. It works across game engines through a unified load model (Spectrum), deterministic plan data (ShardPlan), a pluggable execution backend interface (Native Runtime and engine bot backends), and a unified observability model (Basin for the server, Generator Observability for the load generators themselves).
+Wavemaker generates, manages, and analyzes the load that large numbers of virtual clients apply to game servers. It works across game engines through a unified load model (Spectrum), declarative test plans (TestPlan, frozen by the controller into ShardPlans), a pluggable execution backend interface (Native Runtime and engine bot backends), and a unified observability model (Basin for the server, Generator Observability for the load generators themselves).
 
 It is not a plain bot scripting framework, nor a general-purpose distributed task queue.
 
@@ -33,6 +33,9 @@ An MCP server (`crates/wm-mcp`, stdio via the official rmcp SDK) exposes `list_r
 Run a first load verification in under a minute — no game server needed
 (the default backend is an in-process simulator; its reports say
 `simulated` loudly):
+
+Requires `protoc` on PATH — the protocol crate generates its protobuf code
+at build time (e.g. `apt install protobuf-compiler`):
 
 ```bash
 cargo build -p wm-cli
@@ -58,7 +61,7 @@ Get the latest rolling build from the **Releases page** (the `nightly` release):
 
 - **https://github.com/cuihairu/wavemaker/releases/tag/nightly**
 
-A new build lands daily (05:17 CST). Choose your asset:
+The schedule fires at 05:17 CST, and a build ships when HEAD has fresh commits (≤48h) — quiet stretches intentionally publish nothing. Choose your asset:
 
 | Asset | Platform | Verify |
 |---|---|---|

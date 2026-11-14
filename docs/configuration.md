@@ -6,6 +6,12 @@ title: Configuration
 
 The following shows configuration layering only; fields are not finally frozen.
 
+The implemented Spectrum schema is `crates/wm-core/src/spectrum.rs` — its
+keys are `arrival.ramp.{from,to}_per_second` / `duration_secs`,
+`lifetime.{distribution,mean_secs}`, `concurrency.{target,max}` and
+`saturation_policy`, and the authoritative user-facing examples are in
+[test-plan](./test-plan.md). The draft below intentionally lags that shape.
+
 ## Swell
 
 ```yaml

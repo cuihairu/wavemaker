@@ -12,7 +12,7 @@
 
 ## 简介
 
-Wavemaker 通过统一的负载模型（Spectrum）、确定性计划数据（ShardPlan）、可插拔的执行后端接口（Native Runtime 与引擎 Bot 后端）和统一的观测模型（面向服务端的 Basin、面向发生器自身的 Generator Observability），生成、管理并分析大量虚拟客户端对游戏服务端施加的负载，支持跨游戏引擎工作。
+Wavemaker 通过统一的负载模型（Spectrum）、声明式测试计划（TestPlan，由控制器冻结为 ShardPlan）、可插拔的执行后端接口（Native Runtime 与引擎 Bot 后端）和统一的观测模型（面向服务端的 Basin、面向发生器自身的 Generator Observability），生成、管理并分析大量虚拟客户端对游戏服务端施加的负载，支持跨游戏引擎工作。
 
 它不是单纯的 Bot 脚本框架，也不是通用分布式任务队列。
 
@@ -32,6 +32,9 @@ MCP 服务器（`crates/wm-mcp`，基于官方 rmcp SDK 的 stdio 传输）向 A
 
 一分钟内跑起第一次负载验证——不需要真实游戏服务器（默认后端是进程内
 模拟器，报告醒目标注 `simulated`）：
+
+需要 PATH 里有 `protoc`——protocol crate 在构建期生成 protobuf 代码
+（例如 `apt install protobuf-compiler`）：
 
 ```bash
 cargo build -p wm-cli
@@ -56,7 +59,7 @@ wm test run examples/plans/smoke.toml --time-scale 0
 
 - **https://github.com/cuihairu/wavemaker/releases/tag/nightly**
 
-每天 05:17（北京时间）落一个新构建。按平台选择资产：
+定时任务在北京时间 05:17 触发，HEAD 有 48 小时内的新提交才落构建——安静的时段有意不发。按平台选择资产：
 
 | 资产 | 平台 | 验证 |
 |---|---|---|

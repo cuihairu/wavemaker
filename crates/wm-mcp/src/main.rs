@@ -716,7 +716,12 @@ mod tests {
         assert_eq!(v["backend"], "stub");
         assert_eq!(v["plan_name"], "mcp-demo");
         assert_eq!(v["asserts"][0]["judgement"]["verdict"], "pass", "{}", v);
-        assert_eq!(v["report_path"], format!("{}/report.md", out.display()));
+        // report_path is built with Path::join, so compare as paths: the
+        // rendering uses the platform separator (backslash on Windows).
+        assert_eq!(
+            Path::new(v["report_path"].as_str().unwrap()),
+            out.join("report.md")
+        );
         assert!(out.join("report.md").exists());
         assert!(out.join("run.json").exists());
     }

@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchStatus } from '../api.js'
+import { fetchStatus, stateTone } from '../api.js'
 
 const route = useRoute()
 const swellId = decodeURIComponent(route.params.swellId)
@@ -37,7 +37,9 @@ onMounted(async () => {
       <tbody>
         <tr v-for="run in runs" :key="run.run_id" data-test="run-row">
           <td>{{ run.run_id }}</td>
-          <td>{{ run.state }}</td>
+          <td>
+            <span class="pill" :class="`pill--${stateTone(run.state)}`">{{ run.state }}</span>
+          </td>
           <td>{{ run.spectrum_path }}</td>
           <td>{{ new Date(run.created_at * 1000).toLocaleString() }}</td>
         </tr>

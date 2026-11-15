@@ -4,7 +4,7 @@
 // Only controller-contract fields are rendered; anything the REST API
 // does not carry yet shows "Not wired" instead of a fabricated value.
 import { onMounted, ref } from 'vue'
-import { fetchStatus, deriveWorkerRows } from '../api.js'
+import { fetchStatus, deriveWorkerRows, stateTone } from '../api.js'
 
 const status = ref(null)
 const workers = ref(null)
@@ -76,7 +76,11 @@ onMounted(async () => {
           <tbody>
             <tr v-for="worker in workers" :key="worker.worker_id" data-test="worker-row">
               <td>{{ worker.worker_id }}</td>
-              <td>{{ worker.expired ? 'Expired' : 'Active' }}</td>
+              <td>
+                <span class="pill" :class="`pill--${stateTone(worker.expired ? 'Expired' : 'Active')}`">
+                  {{ worker.expired ? 'Expired' : 'Active' }}
+                </span>
+              </td>
               <td><span class="unwired">Not wired</span></td>
               <td>{{ worker.seconds_since_heartbeat }}s ago</td>
               <td><span class="unwired">Not wired</span></td>

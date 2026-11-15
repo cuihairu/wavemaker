@@ -8,6 +8,7 @@ import {
   strideSamples,
   compareRuns,
   canDo,
+  stateTone,
 } from '../api.js'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
@@ -254,5 +255,29 @@ describe('canDo', () => {
   it('denies actions missing from the matrix (never defaults to allowed)', () => {
     expect(canDo(matrix, role('admin'), 'manage_users')).toBe(false)
     expect(canDo([], role('admin'), 'view')).toBe(false)
+  })
+})
+
+describe('stateTone', () => {
+  it('maps the controller state vocabulary to pill tones', () => {
+    // Live family (backend_registry.rs transitions into these while a run works).
+    expect(stateTone('Created')).toBe('ok')
+    expect(stateTone('Running')).toBe('ok')
+    expect(stateTone('PlanAccepted')).toBe('ok')
+    // Drain / degrade paths warn.
+    expect(stateTone('Draining')).toBe('warn')
+    expect(stateTone('AdmissionStopped')).toBe('warn')
+    expect(stateTone('Degraded')).toBe('warn')
+    // Failures and expired workers crit.
+    expect(stateTone('Failed')).toBe('crit')
+    expect(stateTone('Expired')).toBe('crit')
+    // Terminal non-failure states stay calm.
+    expect(stateTone('Stopped')).toBe('neutral')
+    expect(stateTone('Completed')).toBe('neutral')
+  })
+
+  it('never colors an unknown state like something it is not', () => {
+    expect(stateTone('SomethingNew')).toBe('neutral')
+    expect(stateTone(undefined)).toBe('neutral')
   })
 })

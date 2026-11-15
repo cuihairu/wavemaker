@@ -30,3 +30,7 @@ tempfile.workspace = true
 ureq = { version = "2", features = ["json"] }
 wm-supervisor.workspace = true
 wm-worker.workspace = true
+
+[[bin]]
+name = "wm-controller-server"
+path = "src/bin/controller-server.rs"

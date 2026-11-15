@@ -61,6 +61,19 @@ export function formatStates(states) {
     .join(', ')
 }
 
+/// Status-pill tone for a run/worker state keyword. Families follow the
+/// controller state vocabulary (backend_registry.rs): live/healthy states
+/// are ok, drain-and-degrade paths warn, failures and expired workers
+/// crit, terminal non-failure states neutral. Unknown states render
+/// neutral — never colored like something they are not.
+export function stateTone(state) {
+  const s = String(state || '').toLowerCase()
+  if (/(fail|expired)/.test(s)) return 'crit'
+  if (/(drain|degrad|admissionstopped)/.test(s)) return 'warn'
+  if (/(running|created|ready|initial|planaccepted|recovering|handshak|active)/.test(s)) return 'ok'
+  return 'neutral'
+}
+
 /// Worker rows for the status page (WM-0602). Each worker keeps its
 /// controller payload verbatim plus one derived flag: `expired` mirrors
 /// the controller's own `expired_workers` verdict — the UI never guesses

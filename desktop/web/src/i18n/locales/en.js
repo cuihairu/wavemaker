@@ -26,6 +26,11 @@ export default {
     workerExpired: 'Expired',
     secondsAgo: '{n}s ago',
   },
+  errors: {
+    devDown:
+      'Controller is not running — run `pnpm dev:full` (or `cargo run -p wm-controller --bin wm-controller-server`) from desktop/web, then retry.',
+    shellDown: 'The desktop service is not responding — restart the app, then retry.',
+  },
   sealand: {
     heading: 'Sea state',
     note: 'now — latest composition; history scrubbing lands with the metrics series (WM-0412)',

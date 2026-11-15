@@ -11,6 +11,7 @@ the web app under `pnpm dev`, captured with headless Chromium.
 | `mobile-390.png` | 390px width: nav scrolls horizontally, legend stacks vertically, table pans, pills wrap |
 | `empty-band.png` | All runs stopped: the band calms to a flat ripple with the "No active swells — launch from Spectrum" guide (no fake activity) |
 | `error-controller-down.png` | Controller unreachable: named error card with Retry button, nothing fabricated |
+| `error-controller-hint.png` | Same case after WM-DEV-001: the card now leads with the actionable hint (`pnpm dev:full` / the cargo command) and trails the raw named error as small detail — no naked fetch string |
 
 Demo data note: the seeded runs (`checkout-swell`, `kb-baseline`,
 `login-storm`, `soak-nightly`) exist only on the capture machine's

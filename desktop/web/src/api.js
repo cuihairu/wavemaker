@@ -16,6 +16,12 @@ export const CONTROLLER_URL =
 const inTauri =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
+/// Which surface the UI is running on (WM-DEV-001): inside the Tauri
+/// shell or a plain browser/dev tab. Error copy branches on this — the
+/// shell case points at a restart, the dev case names the command that
+/// starts the controller.
+export const isTauriShell = () => inTauri
+
 const httpFetch = inTauri ? tauriFetch : globalThis.fetch
 
 /// GET /api/v1/status. Throws a named error on a non-OK response —

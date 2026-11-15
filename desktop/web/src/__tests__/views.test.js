@@ -100,6 +100,8 @@ describe('SwellListView', () => {
     rejectStatus(new Error('controller_status_failed: 500'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(wrapper.find('[data-test="error"]').text()).toContain('controller_status_failed')
+    // The dev-surface hint names the exact command that starts the stack.
+    expect(wrapper.find('[data-test="error-hint"]').text()).toContain('pnpm dev:full')
   })
 })
 

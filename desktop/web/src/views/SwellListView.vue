@@ -2,10 +2,11 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { fetchStatus, deriveSwells, formatStates, stateTone } from '../api.js'
+import { fetchStatus, deriveSwells, formatStates, stateTone, isTauriShell } from '../api.js'
 import SeaBand from '../components/SeaBand.vue'
 
 const { t } = useI18n()
+const inShell = isTauriShell()
 
 const swells = ref(null)
 const error = ref('')
@@ -53,7 +54,12 @@ function sparkPath(swell) {
     <h1>{{ t('swells.heading') }}</h1>
     <SeaBand v-if="!error" :swells="swells" @open="openSwell" />
     <div v-if="error" class="error error-card" data-test="error">
-      <span>{{ error }}</span>
+      <div>
+        <p class="error-hint" data-test="error-hint">
+          {{ inShell ? t('errors.shellDown') : t('errors.devDown') }}
+        </p>
+        <p class="error-detail">{{ error }}</p>
+      </div>
       <button data-test="retry" @click="load">{{ t('common.retry') }}</button>
     </div>
     <p v-else-if="swells === null" data-test="loading">{{ t('common.loading') }}</p>

@@ -27,6 +27,11 @@ export default {
     workerExpired: '已过期',
     secondsAgo: '{n} 秒前',
   },
+  errors: {
+    devDown:
+      'Controller 未运行 — 在 desktop/web 下运行 `pnpm dev:full`(或 `cargo run -p wm-controller --bin wm-controller-server`)后重试。',
+    shellDown: '桌面服务未响应 — 重启应用后重试。',
+  },
   sealand: {
     heading: '海况',
     note: 'now — 当前构成;历史回放随 metrics 序列(WM-0412)提供',

@@ -70,9 +70,19 @@ if ((await healthz()) === 'ok') {
 }
 log('controller healthy')
 
-vite = spawn('pnpm', ['exec', 'vite'], { stdio: 'inherit', cwd: webDir })
+// Empty VITE_CONTROLLER_URL switches the web client to same-origin
+// relative URLs through vite's /api proxy — a plain browser tab then
+// reaches the controller without tripping its (intentional) CORS wall.
+vite = spawn('pnpm', ['exec', 'vite'], {
+  stdio: 'inherit',
+  cwd: webDir,
+  env: { ...process.env, VITE_CONTROLLER_URL: '' },
+})
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
+// SIGINT/SIGTERM cover Ctrl-C and kill; SIGHUP covers the wrapping
+// shell dying (a bare `&` or a terminal close would otherwise orphan
+// both children).
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
     killTree(vite)
     killTree(controller)
@@ -85,3 +95,17 @@ vite.on('exit', (code) => {
   killTree(controller)
   process.exit(code ?? 0)
 })
+
+// Orphan watchdog: if whatever launched this script dies, the OS reparents
+// us to init (ppid 1) — treat that as shutdown and reap the stack. This
+// covers a killed wrapper shell; a SIGKILL aimed at this script itself
+// cannot be caught by anything, and the supported interactive path is
+// Ctrl-C (SIGINT reaches the whole foreground group).
+setInterval(() => {
+  if (process.ppid === 1) {
+    log('parent process gone — shutting the stack down')
+    killTree(vite)
+    killTree(controller)
+    process.exit(0)
+  }
+}, 1000).unref()

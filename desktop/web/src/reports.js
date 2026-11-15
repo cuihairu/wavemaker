@@ -15,14 +15,17 @@
 // structure, rather than fabricating report numbers.
 
 /// The report sections a comparison would show, in the engine's field order.
+/// The per-section descriptions are user-visible text, so they live in the
+/// i18n dictionaries (en wording in i18n/locales/en.js) and the view renders
+/// `t(contentKey)`.
 export const REPORT_SECTIONS = [
-  { section: 'swell_id', content: 'the swell the report was built for' },
-  { section: 'timeline_anchor', content: 'anchor the single timeline was built on' },
-  { section: 'effective_window', content: 'declared correlation range ∩ source coverage' },
-  { section: 'timeline', content: 'WM-0414 alignment record (clocks, trusts, offsets)' },
-  { section: 'generator', content: 'WM-0412 aggregate of the generator plane' },
-  { section: 'saturation', content: 'saturation evidence ("Generator Saturated")' },
-  { section: 'server', content: 'WM-0413 per-series server aggregates' },
-  { section: 'quality', content: 'WM-0408 missing-data and delay detection' },
-  { section: 'labels', content: 'WM-0415 data-quality labels' },
+  { section: 'swell_id', contentKey: 'reports.sectionSwellId' },
+  { section: 'timeline_anchor', contentKey: 'reports.sectionTimelineAnchor' },
+  { section: 'effective_window', contentKey: 'reports.sectionEffectiveWindow' },
+  { section: 'timeline', contentKey: 'reports.sectionTimeline' },
+  { section: 'generator', contentKey: 'reports.sectionGenerator' },
+  { section: 'saturation', contentKey: 'reports.sectionSaturation' },
+  { section: 'server', contentKey: 'reports.sectionServer' },
+  { section: 'quality', contentKey: 'reports.sectionQuality' },
+  { section: 'labels', contentKey: 'reports.sectionLabels' },
 ]

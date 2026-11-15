@@ -39,7 +39,8 @@ to a calm dark terminal-adjacent feel without being a terminal costume.
   and view routes intact.
 - Backend is the Rust controller (`wm-controller-server`, HTTP :7600). The web UI reads
   `/api/v1/status` and friends; demo data acceptable only where clearly labeled.
-- English UI (README is English-first); no i18n requirement.
+- Bilingual UI (en / zh-CN via vue-i18n; glossary terms stay English per docs/glossary.md);
+  docs are English-first with a zh README mirror.
 - Must remain keyboard-reachable and readable; audit/users tables stay functional.
 - Brand: no logo asset exists; the word-mark "Wavemaker" in type only. Waves/swells are the
   product's own metaphor and may inform visual identity — but the UI is a working instrument,

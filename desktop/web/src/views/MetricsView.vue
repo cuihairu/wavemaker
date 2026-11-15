@@ -7,8 +7,11 @@
 // series is persisted yet (WM-0412/0413 pending), so a curve would be
 // fabricated data. The wired summary below is real `/status` data.
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { fetchStatus } from '../api.js'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
+
+const { t } = useI18n()
 
 const status = ref(null)
 const error = ref('')
@@ -24,45 +27,46 @@ onMounted(async () => {
 
 <template>
   <main>
-    <RouterLink to="/">← All swells</RouterLink>
-    <h1>Generator / Server metrics</h1>
+    <RouterLink to="/">{{ t('back.allSwells') }}</RouterLink>
+    <h1>{{ t('metrics.heading') }}</h1>
     <p v-if="error" class="error" data-test="error">{{ error }}</p>
-    <p v-else-if="status === null" data-test="loading">Loading…</p>
+    <p v-else-if="status === null" data-test="loading">{{ t('common.loading') }}</p>
     <template v-else>
       <section data-test="summary-section">
-        <h2>Live summary</h2>
+        <h2>{{ t('metrics.liveSummary') }}</h2>
         <table data-test="summary-table">
           <tbody>
             <tr>
-              <th scope="row">Backend state</th>
+              <th scope="row">{{ t('metrics.backendState') }}</th>
               <td data-test="backend-state">{{ status.status }}</td>
             </tr>
             <tr>
-              <th scope="row">Connected workers</th>
+              <th scope="row">{{ t('status.connectedWorkers') }}</th>
               <td data-test="worker-count">{{ status.worker_count }}</td>
             </tr>
             <tr>
-              <th scope="row">Runs</th>
+              <th scope="row">{{ t('metrics.runsRow') }}</th>
               <td data-test="run-count">{{ (status.runs || []).length }}</td>
             </tr>
           </tbody>
         </table>
         <p class="muted">
-          Worker roster and per-worker details live on the
-          <RouterLink to="/status">Status</RouterLink> page.
+          <i18n-t keypath="metrics.statusHint" scope="global">
+            <template #link><RouterLink to="/status">{{ t('nav.status') }}</RouterLink></template>
+          </i18n-t>
         </p>
       </section>
 
       <section data-test="generator-section">
-        <h2>Generator</h2>
+        <h2>{{ t('metrics.generator') }}</h2>
         <table data-test="generator-table">
           <thead>
             <tr>
-              <th>Metric</th>
-              <th>Kind</th>
-              <th>Aggregation</th>
-              <th>Unit</th>
-              <th>Curve source</th>
+              <th>{{ t('metrics.colMetric') }}</th>
+              <th>{{ t('metrics.colKind') }}</th>
+              <th>{{ t('metrics.colAggregation') }}</th>
+              <th>{{ t('metrics.colUnit') }}</th>
+              <th>{{ t('metrics.colSource') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -75,21 +79,21 @@ onMounted(async () => {
               <td>{{ m.kind }}</td>
               <td>{{ m.aggregate }}</td>
               <td>{{ m.unit }}</td>
-              <td><span class="unwired">Not wired</span></td>
+              <td><span class="unwired">{{ t('common.notWired') }}</span></td>
             </tr>
           </tbody>
         </table>
       </section>
 
       <section data-test="server-section">
-        <h2>Server</h2>
+        <h2>{{ t('metrics.server') }}</h2>
         <table data-test="server-table">
           <thead>
             <tr>
-              <th>Kind</th>
-              <th>Aggregation</th>
-              <th>Rule</th>
-              <th>Curve source</th>
+              <th>{{ t('metrics.colKind') }}</th>
+              <th>{{ t('metrics.colAggregation') }}</th>
+              <th>{{ t('metrics.colRule') }}</th>
+              <th>{{ t('metrics.colSource') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -100,20 +104,17 @@ onMounted(async () => {
             >
               <td>{{ s.kind }}</td>
               <td>{{ s.aggregate }}</td>
-              <td class="muted">{{ s.note }}</td>
-              <td><span class="unwired">Not wired</span></td>
+              <td class="muted">{{ t(s.noteKey) }}</td>
+              <td><span class="unwired">{{ t('common.notWired') }}</span></td>
             </tr>
           </tbody>
         </table>
       </section>
 
       <p class="unwired-note" data-test="unwired-note">
-        No metric curves are shown: the controller exposes no metrics
-        endpoint (only <code>/api/v1/status</code>), no metric series is
-        persisted, and the generator/server aggregation pipeline
-        (WM-0412 / WM-0413) is not a completed deliverable yet. These
-        are the metric families the engine defines — a curve appears
-        here once a metrics surface is wired, and nothing is fabricated.
+        <i18n-t keypath="metrics.unwiredNote" scope="global">
+          <template #statusEndpoint><code>/api/v1/status</code></template>
+        </i18n-t>
       </p>
     </template>
   </main>

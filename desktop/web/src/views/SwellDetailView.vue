@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { fetchStatus, stateTone } from '../api.js'
 
+const { t } = useI18n()
 const route = useRoute()
 const swellId = decodeURIComponent(route.params.swellId)
 const runs = ref(null)
@@ -20,18 +22,18 @@ onMounted(async () => {
 
 <template>
   <main>
-    <RouterLink to="/">← All swells</RouterLink>
+    <RouterLink to="/">{{ t('back.allSwells') }}</RouterLink>
     <h1>{{ swellId }}</h1>
     <p v-if="error" class="error" data-test="error">{{ error }}</p>
-    <p v-else-if="runs === null" data-test="loading">Loading…</p>
-    <p v-else-if="runs.length === 0" data-test="empty">No runs for this swell.</p>
+    <p v-else-if="runs === null" data-test="loading">{{ t('common.loading') }}</p>
+    <p v-else-if="runs.length === 0" data-test="empty">{{ t('swellDetail.noRuns') }}</p>
     <table v-else data-test="run-table">
       <thead>
         <tr>
-          <th>Run</th>
-          <th>State</th>
-          <th>Spectrum</th>
-          <th>Created</th>
+          <th>{{ t('swellDetail.colRun') }}</th>
+          <th>{{ t('swellDetail.colState') }}</th>
+          <th>{{ t('swellDetail.colSpectrum') }}</th>
+          <th>{{ t('swellDetail.colCreated') }}</th>
         </tr>
       </thead>
       <tbody>

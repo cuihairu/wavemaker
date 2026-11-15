@@ -59,6 +59,11 @@ wm test run examples/plans/smoke.toml --time-scale 0
 Controller:`pnpm dev:full` —— 先启动 `wm-controller-server`,等
 `/healthz` 通过后再起 vite。
 
+界面双语（English / 简体中文）：顶导航有 EN / 中文 切换,选择持久化在
+`localStorage`(`wm-locale`);未保存时按浏览器语言探测,兜底英文。
+词汇约定遵循 [docs/glossary.md](docs/glossary.md):Swell、Spectrum、
+Run、Worker、Controller、RPS、p99、WM-xxxx 等术语在两种语言中保留英文。
+
 ## 每日构建
 
 最新滚动构建请到 **Releases 页**（`nightly` 发布）获取：

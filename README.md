@@ -61,6 +61,13 @@ One command starts the desktop web UI together with the controller it
 talks to (from `desktop/web`): `pnpm dev:full` — it launches
 `wm-controller-server`, waits for its `/healthz`, then starts vite.
 
+The UI is bilingual (English / 简体中文): the top navigation has an
+EN / 中文 switch, the choice persists in `localStorage` (`wm-locale`),
+and detection falls back to the browser language, then English.
+Glossary terms (Swell, Spectrum, Run, Worker, Controller, RPS, p99,
+WM-xxxx…) stay English in both languages per
+[docs/glossary.md](docs/glossary.md).
+
 ## Daily Builds
 
 Get the latest rolling build from the **Releases page** (the `nightly` release):

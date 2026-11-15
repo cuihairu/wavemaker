@@ -6,15 +6,17 @@
 // drift from the engine — and no concurrency curve is fabricated (the
 // engine has no active-count estimator yet, §4.4).
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   loadSpectrum,
   saveSpectrum,
   validateSpectrum,
-  summarizeIssues,
   timelineFor,
   timelinePath,
   strideSamples,
 } from '../api.js'
+
+const { t } = useI18n()
 
 const path = ref('')
 const content = ref('')
@@ -45,6 +47,15 @@ const cumulativeMax = computed(() =>
     ? Math.max(...timeline.value.points.map((p) => p.expected_arrivals))
     : 0
 )
+// "N errors, M warnings" through the pipe-plural keys (api.js's
+// summarizeIssues keeps its English form for the protocol-level test).
+const issueSummary = computed(() => {
+  if (!report.value || report.value.parse_error) return ''
+  const issues = report.value.issues || []
+  const errors = issues.filter((i) => i.severity === 'error').length
+  const warnings = issues.filter((i) => i.severity === 'warning').length
+  return `${t('spectrum.issueErrors', errors, { n: errors })}, ${t('spectrum.issueWarnings', warnings, { n: warnings })}`
+})
 
 function fmt(v) {
   return Number(v.toFixed(2)).toString()
@@ -79,7 +90,7 @@ async function onSave() {
   reset()
   try {
     await saveSpectrum(path.value, content.value)
-    savedMessage.value = `saved ${path.value}`
+    savedMessage.value = t('spectrum.saved', { path: path.value })
   } catch (err) {
     error.value = err.message || String(err)
   }
@@ -97,17 +108,17 @@ async function onTimeline() {
 
 <template>
   <main>
-    <RouterLink to="/">← All swells</RouterLink>
-    <h1>Spectrum</h1>
+    <RouterLink to="/">{{ t('back.allSwells') }}</RouterLink>
+    <h1>{{ t('nav.spectrum') }}</h1>
     <p>
       <input
         v-model="path"
         data-test="path-input"
-        placeholder="path to spectrum.yaml"
+        :placeholder="t('spectrum.placeholder')"
         size="40"
       />
-      <button data-test="load" @click="onLoad">Load</button>
-      <button data-test="save" @click="onSave">Save</button>
+      <button data-test="load" @click="onLoad">{{ t('spectrum.load') }}</button>
+      <button data-test="save" @click="onSave">{{ t('spectrum.save') }}</button>
     </p>
     <p v-if="error" class="error" data-test="error">{{ error }}</p>
     <p v-else-if="savedMessage" data-test="saved">{{ savedMessage }}</p>
@@ -119,16 +130,16 @@ async function onTimeline() {
       spellcheck="false"
     ></textarea>
     <p>
-      <button data-test="validate" @click="onValidate">Validate</button>
-      <button data-test="timeline" @click="onTimeline">Show timeline</button>
+      <button data-test="validate" @click="onValidate">{{ t('spectrum.validate') }}</button>
+      <button data-test="timeline" @click="onTimeline">{{ t('spectrum.showTimeline') }}</button>
     </p>
     <section v-if="report" data-test="report">
       <p v-if="report.parse_error" class="error" data-test="parse-error">
-        cannot parse: {{ report.parse_error }}
+        {{ t('spectrum.parseError', { message: report.parse_error }) }}
       </p>
       <template v-else>
-        <p v-if="report.ok" class="ok" data-test="valid">Config is valid.</p>
-        <p data-test="issue-summary">{{ summarizeIssues(report.issues) }}</p>
+        <p v-if="report.ok" class="ok" data-test="valid">{{ t('spectrum.valid') }}</p>
+        <p data-test="issue-summary">{{ issueSummary }}</p>
         <ul>
           <li v-for="issue in report.issues" :key="issue.code + issue.field" data-test="issue">
             <span :class="`issue-${issue.severity}`" data-test="issue-severity">
@@ -141,19 +152,17 @@ async function onTimeline() {
       </template>
     </section>
     <section v-if="timeline" data-test="timeline-section">
-      <h2>Planned load</h2>
+      <h2>{{ t('spectrum.plannedLoad') }}</h2>
       <p data-test="timeline-window">
-        window 0–{{ fmt(timeline.horizon_secs) }}s (ramp
-        {{ fmt(timeline.ramp_duration_secs) }}s + hold)
+        {{ t('spectrum.window', { horizon: fmt(timeline.horizon_secs), ramp: fmt(timeline.ramp_duration_secs) }) }}
       </p>
       <p data-test="timeline-note">
-        No concurrency curve is shown: the engine has no active-count
-        estimator yet, and a naive λ·W line would overstate precision.
+        {{ t('spectrum.timelineNote') }}
       </p>
       <figure data-test="rate-chart">
-        <figcaption>Arrival rate λ(t) — per second, peak {{ fmt(rateMax) }}</figcaption>
+        <figcaption>{{ t('spectrum.figRate', { peak: fmt(rateMax) }) }}</figcaption>
         <svg :viewBox="`0 0 ${W} ${H}`" width="480" height="200" role="img"
-             aria-label="planned arrival rate over time">
+             :aria-label="t('spectrum.ariaRate')">
           <line :x1="0" :y1="H" :x2="W" :y2="H" stroke="#d5d3cb" stroke-width="1" />
           <path :d="ratePath" fill="none" stroke="#2a78d6" stroke-width="2" />
           <circle
@@ -164,14 +173,14 @@ async function onTimeline() {
             r="2.5"
             fill="#2a78d6"
           >
-            <title>t={{ fmt(s.t_secs) }}s, λ={{ fmt(s.rate_per_second) }}/s</title>
+            <title>{{ t('spectrum.dotRate', { t: fmt(s.t_secs), rate: fmt(s.rate_per_second) }) }}</title>
           </circle>
         </svg>
       </figure>
       <figure data-test="cumulative-chart">
-        <figcaption>Expected arrivals Λ(t) — total {{ fmt(cumulativeMax) }}</figcaption>
+        <figcaption>{{ t('spectrum.figCumulative', { total: fmt(cumulativeMax) }) }}</figcaption>
         <svg :viewBox="`0 0 ${W} ${H}`" width="480" height="200" role="img"
-             aria-label="cumulative expected arrivals over time">
+             :aria-label="t('spectrum.ariaCumulative')">
           <line :x1="0" :y1="H" :x2="W" :y2="H" stroke="#d5d3cb" stroke-width="1" />
           <path :d="cumulativePath" fill="none" stroke="#2a78d6" stroke-width="2" />
           <circle
@@ -182,16 +191,16 @@ async function onTimeline() {
             r="2.5"
             fill="#2a78d6"
           >
-            <title>t={{ fmt(s.t_secs) }}s, Λ={{ fmt(s.expected_arrivals) }}</title>
+            <title>{{ t('spectrum.dotCumulative', { t: fmt(s.t_secs), total: fmt(s.expected_arrivals) }) }}</title>
           </circle>
         </svg>
       </figure>
       <table data-test="timeline-table">
         <thead>
           <tr>
-            <th>t (s)</th>
-            <th>λ (1/s)</th>
-            <th>Λ arrivals</th>
+            <th>{{ t('spectrum.colT') }}</th>
+            <th>{{ t('spectrum.colLambda') }}</th>
+            <th>{{ t('spectrum.colArrivals') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -202,7 +211,7 @@ async function onTimeline() {
           </tr>
         </tbody>
       </table>
-      <p class="muted">every 10th sample shown</p>
+      <p class="muted">{{ t('spectrum.strideNote') }}</p>
     </section>
   </main>
 </template>

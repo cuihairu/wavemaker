@@ -12,6 +12,11 @@ import {
 } from '../api.js'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
+import en from '../i18n/locales/en.js'
+import zhCN from '../i18n/locales/zh-CN.js'
+
+// Dictionaries are nested; resolve dotted i18n keys like 'metrics.serverNoteGauge'.
+const dict = (d, key) => key.split('.').reduce((o, k) => o?.[k], d)
 
 const run = (overrides = {}) => ({
   run_id: 'r1',
@@ -177,7 +182,10 @@ describe('metric families', () => {
     expect(SERVER_METRICS.map((s) => s.kind)).toEqual(['gauge', 'counter', 'histogram'])
     for (const s of SERVER_METRICS) {
       expect(s.aggregate).toBeTruthy()
-      expect(s.note).toBeTruthy()
+      // The rule text lives in the i18n dictionaries (WM-I18N-001); the
+      // key must resolve in every locale.
+      expect(dict(en, s.noteKey)).toBeTruthy()
+      expect(dict(zhCN, s.noteKey)).toBeTruthy()
     }
   })
 })
@@ -225,7 +233,10 @@ describe('report sections', () => {
 
   it('describes every section', () => {
     for (const s of REPORT_SECTIONS) {
-      expect(s.content).toBeTruthy()
+      // The description lives in the i18n dictionaries (WM-I18N-001); the
+      // key must resolve in every locale.
+      expect(dict(en, s.contentKey)).toBeTruthy()
+      expect(dict(zhCN, s.contentKey)).toBeTruthy()
     }
   })
 })

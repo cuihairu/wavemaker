@@ -41,16 +41,18 @@ export const SERVER_METRICS = [
   {
     kind: 'gauge',
     aggregate: 'min / mean / max',
-    note: 'over finite samples; NaN samples counted, never dropped silently',
+    // i18n keys (en wording in i18n/locales/en.js) — the rule text is
+    // user-visible, so it goes through the dictionaries.
+    noteKey: 'metrics.serverNoteGauge',
   },
   {
     kind: 'counter',
     aggregate: 'first / last / delta',
-    note: 'delta = last - first; a negative delta is a reset, recorded as-is',
+    noteKey: 'metrics.serverNoteCounter',
   },
   {
     kind: 'histogram',
     aggregate: 'not aggregated to scalars',
-    note: 'needs merged histograms; a scalar would fabricate percentiles',
+    noteKey: 'metrics.serverNoteHistogram',
   },
 ]

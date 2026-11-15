@@ -309,14 +309,30 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "nightly $(date -u +%Y-%m-%d)" \
             --prerelease \
-            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. Desktop (Tauri GUI): wavemaker-nightly-desktop-linux-x86_64.tar.gz and wavemaker-nightly-desktop-linux-aarch64.tar.gz (bare GUI binary + DEPENDENCIES.txt; needs webkit2gtk-4.1, xvfb window-smoke only), wavemaker-nightly-desktop-windows-x86_64.msi (WebView2; build sanity only), wavemaker-nightly-desktop-macos-aarch64.dmg (unsigned — right-click Open; build sanity only). The Windows/macOS CLI legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release." || true
-          # never leave a draft as the delivery surface
-          gh release edit "$tag" --draft=false 2>/dev/null || true
+            --notes "Rolling nightly build of ${GITHUB_SHA}. Built with stable rust. Assets: wavemaker-linux-x86_64, wavemaker-linux-aarch64 (bare binaries), wavemaker-windows-x86_64.zip (wm.exe + wm-mcp.exe), wavemaker-macos-aarch64.tar.gz (Apple Silicon) — each with a .sha256 and PLATFORM-NOTES. Desktop (Tauri GUI): wavemaker-nightly-desktop-linux-x86_64.tar.gz and wavemaker-nightly-desktop-linux-aarch64.tar.gz (bare GUI binary + DEPENDENCIES.txt; needs webkit2gtk-4.1, xvfb window-smoke only), wavemaker-nightly-desktop-windows-x86_64.msi (WebView2; build sanity only), wavemaker-nightly-desktop-macos-aarch64.dmg (unsigned — right-click Open; build sanity only). The Windows/macOS CLI legs are compile + unit-test verified only; see each PLATFORM-NOTES. This is a rolling prerelease binary, not a versioned release."
+          # never leave a draft as the delivery surface; a published release
+          # whose tag ref disappears silently converts to a draft (untagged
+          # URLs, invisible on the Releases page) — that must fail here
+          gh release edit "$tag" --draft=false
           # assert the publish actually landed (green-but-unshipped must fail)
           released_at=$(gh release view "$tag" --json publishedAt --jq .publishedAt)
           echo "release publishedAt=$released_at run started=$RUN_STARTED"
           if [ -z "$released_at" ]; then
             echo "FAIL: release has no publishedAt" >&2
+            exit 1
+          fi
+          is_draft=$(gh release view "$tag" --json isDraft --jq .isDraft)
+          if [ "$is_draft" != "false" ]; then
+            echo "FAIL: nightly is a draft release" >&2
+            exit 1
+          fi
+          rel_tag=$(gh release view "$tag" --json tagName --jq .tagName)
+          if [ "$rel_tag" != "$tag" ]; then
+            echo "FAIL: release is on tag '$rel_tag', expected '$tag'" >&2
+            exit 1
+          fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+            echo "FAIL: tag ref '$tag' is missing (release would silently draft)" >&2
             exit 1
           fi
           asset_count=$(gh release view "$tag" --json assets --jq 'length')

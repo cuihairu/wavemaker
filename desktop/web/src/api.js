@@ -8,8 +8,10 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 
+// Set VITE_CONTROLLER_URL='' (empty) in dev to use same-origin relative
+// URLs through the vite proxy; unset keeps the absolute Tauri default.
 export const CONTROLLER_URL =
-  import.meta.env.VITE_CONTROLLER_URL || 'http://127.0.0.1:7600'
+  import.meta.env.VITE_CONTROLLER_URL ?? 'http://127.0.0.1:7600'
 
 const inTauri =
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window

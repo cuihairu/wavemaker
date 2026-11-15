@@ -55,6 +55,12 @@ wm test run examples/plans/smoke.toml --time-scale 0
 The plan language, assertion semantics, the controller backend, and the
 stub's honest boundaries are in [docs/test-plan.md](docs/test-plan.md).
 
+## Desktop development
+
+One command starts the desktop web UI together with the controller it
+talks to (from `desktop/web`): `pnpm dev:full` — it launches
+`wm-controller-server`, waits for its `/healthz`, then starts vite.
+
 ## Daily Builds
 
 Get the latest rolling build from the **Releases page** (the `nightly` release):

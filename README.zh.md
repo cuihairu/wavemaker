@@ -53,6 +53,12 @@ wm test run examples/plans/smoke.toml --time-scale 0
 计划语法、断言语义、controller 后端与 stub 的诚实边界见
 [docs/zh/test-plan.md](docs/zh/test-plan.md)。
 
+## 桌面开发
+
+在 `desktop/web` 下一条命令同时拉起桌面 Web 界面与它依赖的
+Controller:`pnpm dev:full` —— 先启动 `wm-controller-server`,等
+`/healthz` 通过后再起 vite。
+
 ## 每日构建
 
 最新滚动构建请到 **Releases 页**（`nightly` 发布）获取：

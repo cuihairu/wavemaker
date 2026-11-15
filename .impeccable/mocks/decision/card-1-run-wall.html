@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wavemaker — Lead Run Wall</title>
+<style>
+  :root{
+    --ground:#0e1116; --panel:#151a21; --panel2:#1a212b; --line:#262f3a;
+    --ink:#e5eaf0; --ink-dim:#8f9dab; --rail:#10151b; --accent:#5eead4;
+    --ok:#34d399; --warn:#fbbf24; --crit:#f87171;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--ground);color:var(--ink);font:13.5px/1.5 "Segoe UI",system-ui,sans-serif}
+  .app{display:grid;grid-template-columns:210px 1fr;grid-template-rows:50px 1fr;height:100vh}
+  .top{grid-column:2;display:flex;align-items:center;gap:18px;background:var(--panel);border-bottom:1px solid var(--line);padding:0 20px}
+  .brand{grid-row:1;grid-column:1;display:flex;align-items:center;justify-content:center;background:var(--rail);border-bottom:1px solid var(--line);border-right:1px solid var(--line);font-weight:700;letter-spacing:.1em;font-size:14px}
+  .brand b{color:var(--accent)}
+  .rail{grid-row:2;grid-column:1;background:var(--rail);border-right:1px solid var(--line);padding:14px 0}
+  .rail .sec{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim);padding:12px 18px 6px}
+  .rail a{display:block;padding:7px 18px;color:var(--ink-dim);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+  .rail a.on{color:var(--ink);border-left-color:var(--accent);background:var(--panel)}
+  .top .crumb{font-size:13px;color:var(--ink-dim)}
+  .top .crumb b{color:var(--ink);font-weight:600}
+  .spacer{flex:1}
+  .ses{color:var(--ink-dim);font-size:12.5px}
+  main{padding:18px 22px;overflow:auto}
+  .wallhead{display:flex;align-items:baseline;gap:14px;margin-bottom:12px}
+  .wallhead h1{font-size:17px;font-weight:600}
+  .wallhead .sub{font-size:12px;color:var(--ink-dim)}
+  .pill{font-size:11px;padding:3px 10px;border-radius:10px;border:1px solid var(--line);color:var(--ink-dim)}
+  .pill.live{color:var(--ok);border-color:rgba(52,211,153,.4)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-align:left;padding:9px 12px;background:var(--panel2);border-bottom:1px solid var(--line)}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr.hot td{background:rgba(94,234,212,.04)}
+  .swell{color:var(--ink);font-weight:600;text-decoration:none}
+  .swell small{display:block;color:var(--ink-dim);font-weight:400;font-size:11px;margin-top:1px}
+  .spark{width:120px;height:26px}
+  .st{font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:2px 8px;border-radius:9px}
+  .st.run{color:var(--ok);background:rgba(52,211,153,.12)}
+  .st.drain{color:var(--warn);background:rgba(251,191,36,.1)}
+  .st.fail{color:var(--crit);background:rgba(248,113,113,.1)}
+  .bar{position:relative;height:5px;border-radius:3px;background:var(--panel2);margin-top:5px;width:110px}
+  .bar i{position:absolute;inset:0;border-radius:3px;background:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="brand">Wave<b>maker</b></div>
+  <nav class="top">
+    <span class="crumb"><b>Swells</b> · live run wall</span>
+    <span class="spacer"></span>
+    <span class="pill live">● 4 runs live</span>
+    <span class="ses">admin (owner) · Log out</span>
+  </nav>
+  <aside class="rail">
+    <div class="sec">Load</div>
+    <a class="on" href="#">Swells</a><a href="#">Status</a><a href="#">Spectrum</a>
+    <div class="sec">Observe</div>
+    <a href="#">Metrics</a><a href="#">Reports</a>
+    <div class="sec">Admin</div>
+    <a href="#">Users</a><a href="#">Audit</a>
+  </aside>
+  <main>
+    <div class="wallhead">
+      <h1>Live runs</h1>
+      <span class="sub">auto-refresh 5s · sorted by state then start</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="pill">filter: all ▾</span>
+    </div>
+    <table>
+      <thead><tr><th>Swell / run</th><th>State</th><th>Target progress</th><th>Live RPS (5 min)</th><th>p99</th><th>Errors</th><th>Elapsed</th></tr></thead>
+      <tbody>
+        <tr class="hot"><td><a class="swell" href="#">checkout-swell<small>run-33 · ramping step 4/6</small></a></td><td><span class="st run">RUNNING</span></td><td><span class="dim">62%</span><div class="bar"><i style="width:62%"></i></div></td><td><svg class="spark" viewBox="0 0 120 26"><path d="M0,20 L15,18 L30,16 L45,15 L60,12 L75,10 L90,9 L105,8 L120,7" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg></td><td>4,210</td><td>86 ms</td><td>0.02%</td><td>1h12m</td></tr>
+        <tr><td><a class="swell" href="#">kb-baseline<small>run-31 · soak hold</small></a></td><td><span class="st run">RUNNING</span></td><td><span class="dim">84%</span><div class="bar"><i style="width:84%"></i></div></td><td><svg class="spark" viewBox="0 0 120 26"><path d="M0,12 L20,13 L40,11 L60,12 L80,11 L100,12 L120,11" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg></td><td>2,870</td><td>112 ms</td><td>0.11%</td><td>1h40m</td></tr>
+        <tr><td><a class="swell" href="#">kb-baseline<small>run-32 · draining workers</small></a></td><td><span class="st drain">DRAINING</span></td><td><span class="dim">98%</span><div class="bar"><i style="width:98%;background:var(--warn)"></i></div></td><td><svg class="spark" viewBox="0 0 120 26"><path d="M0,8 L20,9 L40,10 L60,14 L80,18 L100,22 L120,24" fill="none" stroke="var(--warn)" stroke-width="1.5"/></svg></td><td>312</td><td>98 ms</td><td>0.09%</td><td>2h05m</td></tr>
+        <tr><td><a class="swell" href="#">login-storm<small>run-30 · abort at step 3</small></a></td><td><span class="st fail">FAILED</span></td><td><span class="dim">41%</span><div class="bar"><i style="width:41%;background:var(--crit)"></i></div></td><td><svg class="spark" viewBox="0 0 120 26"><path d="M0,10 L15,11 L30,14 L45,20 L60,25 L75,25 L90,25 L120,25" fill="none" stroke="var(--crit)" stroke-width="1.5"/></svg></td><td>0</td><td>—</td><td>6.4%</td><td>0h22m</td></tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

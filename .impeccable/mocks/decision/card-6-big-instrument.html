@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wavemaker — Single Big Instrument</title>
+<style>
+  :root{
+    --ground:#101318; --panel:#171b22; --panel2:#1d232d; --line:#28303c;
+    --ink:#e6ebf0; --ink-dim:#93a1b0; --gauge:#4fc3f7; --gauge-dim:#22384a;
+    --ok:#34d399; --warn:#fbbf24; --crit:#f87171;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--ground);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+  .topnav{display:flex;align-items:center;gap:20px;height:46px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:700;font-size:14px;letter-spacing:.1em}
+  .topnav a{color:var(--ink-dim);text-decoration:none;font-size:12.5px}
+  .topnav a.on{color:var(--gauge)}
+  .spacer{flex:1}
+  .runsel{display:flex;align-items:center;gap:10px;font-size:13px}
+  .runsel select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:13px}
+  .deck{max-width:1080px;margin:26px auto 0;padding:0 24px}
+  .gauge-row{display:flex;gap:36px;align-items:center;justify-content:center;padding:18px 0 8px}
+  .dial{position:relative;width:300px;height:300px}
+  .dial svg{width:100%;height:100%}
+  .dial .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .dial .big{font-size:56px;font-weight:200;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .dial .unit{font-size:12px;color:var(--ink-dim);letter-spacing:.18em;text-transform:uppercase;margin-top:2px}
+  .vitals{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:10px}
+  .vit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .vit .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+  .vit .v{font-size:26px;font-weight:300;font-variant-numeric:tabular-nums;margin-top:4px}
+  .vit .v small{font-size:13px;color:var(--ink-dim);font-weight:400}
+  .vit .d{font-size:11px;margin-top:4px}
+  .d.up{color:var(--ok)} .d.dn{color:var(--crit)} .d.wn{color:var(--warn)}
+  .strip{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+  .strip .t{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:8px}
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WAVEMAKER</span>
+  <a class="on" href="#">Swells</a><a href="#">Status</a><a href="#">Spectrum</a>
+  <a href="#">Metrics</a><a href="#">Reports</a><a href="#">Users</a><a href="#">Audit</a>
+  <span class="spacer"></span>
+  <div class="runsel">
+    <label style="color:var(--ink-dim)">Run</label>
+    <select><option>checkout-swell / run-33 (live)</option><option>kb-baseline / run-31</option><option>login-storm / run-30</option></select>
+    <span style="font-size:11px;color:var(--ok);letter-spacing:.08em">● LIVE</span>
+  </div>
+</nav>
+
+<main class="deck">
+  <div class="gauge-row">
+    <div class="dial">
+      <svg viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--gauge-dim)" stroke-width="10"/>
+        <path d="M100,14 A86,86 0 1,1 24,118" fill="none" stroke="var(--gauge)" stroke-width="10" stroke-linecap="round"/>
+        <g stroke="var(--ink-dim)" stroke-width="1">
+          <line x1="100" y1="8" x2="100" y2="18"/><line x1="169" y1="34" x2="162" y2="42"/>
+          <line x1="192" y1="100" x2="182" y2="100"/><line x1="169" y1="166" x2="162" y2="158"/>
+          <line x1="100" y1="192" x2="100" y2="182"/><line x1="31" y1="166" x2="38" y2="158"/>
+          <line x1="8" y1="100" x2="18" y2="100"/><line x1="31" y1="34" x2="38" y2="42"/>
+        </g>
+        <line x1="100" y1="100" x2="150" y2="48" stroke="var(--ink)" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="100" cy="100" r="5" fill="var(--ink)"/>
+      </svg>
+      <div class="center"><div class="big">84</div><div class="unit">% target RPS</div></div>
+    </div>
+    <div style="max-width:300px;color:var(--ink-dim);font-size:13px">
+      <div style="color:var(--ink);font-weight:600;font-size:15px;margin-bottom:6px">checkout-swell · run-33</div>
+      ramping toward 5,000 rps target · step 4 of 6 · 1h 12m elapsed · 2h 0m planned<br>
+      <span style="color:var(--ok)">on track</span> — throughput within 3% of the arrival curve for 40 min.
+    </div>
+  </div>
+
+  <div class="vitals">
+    <div class="vit"><div class="k">Throughput</div><div class="v">4,210 <small>rps</small></div><div class="d up">▲ 2.1% vs 5 min</div></div>
+    <div class="vit"><div class="k">p99 latency</div><div class="v">86 <small>ms</small></div><div class="d wn">▲ 8 ms over 15 min</div></div>
+    <div class="vit"><div class="k">Error rate</div><div class="v">0.02<small>%</small></div><div class="d up">steady</div></div>
+    <div class="vit"><div class="k">Active virtual users</div><div class="v">12,400</div><div class="d" style="color:var(--ink-dim)">of 15,000 ramp</div></div>
+  </div>
+
+  <div class="strip">
+    <div class="t">Throughput vs arrival curve — last 30 min</div>
+    <svg viewBox="0 0 1000 90" style="width:100%;height:70px">
+      <path d="M0,80 C120,74 200,60 320,52 C440,44 560,40 680,34 C800,28 900,26 1000,24" fill="none" stroke="var(--gauge-dim)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <path d="M0,82 C120,78 200,66 320,58 C440,50 560,44 680,38 C800,32 900,28 1000,27" fill="none" stroke="var(--gauge)" stroke-width="2"/>
+    </svg>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,65 @@
+{
+ "title": "Wavemaker UI — pick the redesign direction",
+ "question": "三张卡是 Swells 首屏的三个结构方向（深色工作台基底一致）。选一个锁定实施，或重摇。",
+ "seed": "seed:f23f3eaa2de04f31",
+ "buildPath": {
+  "value": "code",
+  "toggle": false
+ },
+ "options": [
+  {
+   "id": "card-7",
+   "kind": "assigned",
+   "kicker": "THE ROLL",
+   "label": "Waveform Status Band — 海况带",
+   "thesis": "登录先看见一张全宽『海况图』：所有活动 swell 的聚合 RPS 叠积成海面，行里每条 swell 带小波形线呼应它的份额；点波段某段直接下钻该 run。呼应 Wavemaker 的海浪本源，信息密度与仪式感兼具。",
+   "palette": [
+    "#0b2239 sea-deep",
+    "#1b7f9e sea-surface",
+    "#38bdf8 accent",
+    "#34d399 ok"
+   ],
+   "viewport": "标准顶导航 → 全宽海况带（150px 叠积面积图+now 游标）→ 紧凑 swell 表（左缘小波形线）",
+   "risk": "首屏最漂亮，但运行数为 0 时海面是空的，空态需要单独设计。",
+   "html": ".impeccable/mocks/decision/card-7-waveform-band.html"
+  },
+  {
+   "id": "card-6",
+   "kind": "grounded",
+   "kicker": "ALTERNATE",
+   "label": "Single Big Instrument — 单一大仪表",
+   "thesis": "一次只盯一个 run：表盘大而克制（刻度环+指针），下方四宫格 vitals + 到达曲线对照带。适合『启动后挂机盯盘』的真实使用场景，其他 run 从顶栏下拉切换。",
+   "palette": [
+    "#101318 ground",
+    "#4fc3f7 gauge",
+    "#1d232d panel",
+    "#34d399 ok"
+   ],
+   "viewport": "顶导航(带 run 切换器) → 巨大表盘(84% target) → 四 vitals 卡 → 30min 到达曲线对照",
+   "risk": "多 run 并行时切换成本高；不是『总览』的答案，是『盯一个』的答案。",
+   "html": ".impeccable/mocks/decision/card-6-big-instrument.html"
+  },
+  {
+   "id": "card-1",
+   "kind": "grounded",
+   "kicker": "ALTERNATE",
+   "label": "Lead Run Wall — 运行墙",
+   "thesis": "最接近传统运维台：左侧窄轨导航 + 全宽运行墙表格，每行内联 sparkline 与目标进度条，状态色彩一眼可辨。信息密度最高、学习成本最低，但也是三张里最『不出乎意料』的。",
+   "palette": [
+    "#0e1116 ground",
+    "#5eead4 accent",
+    "#34d399 ok",
+    "#f87171 crit"
+   ],
+   "viewport": "左轨导航 + 顶面包屑 → 全宽 run 表（swell/run 双行、内联 sparkline、进度条、状态 pill）",
+   "risk": "安全但平庸；海浪身份只剩左缘小波形 glyph，产品气质弱。",
+   "html": ".impeccable/mocks/decision/card-1-run-wall.html"
+  },
+  {
+   "id": "reroll",
+   "kind": "reroll",
+   "label": "Re-roll",
+   "line": "换个手法再来三张（可带方向偏好，如『更密』『更炫』）"
+  }
+ ]
+}

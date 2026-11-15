@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wavemaker — Waveform Status Band</title>
+<style>
+  :root{
+    --sea-deep:#0b2239; --sea-mid:#134e6f; --sea-surface:#1b7f9e;
+    --ink:#e8f1f5; --ink-dim:#9db8c4; --ground:#0a141c; --panel:#0f1d28;
+    --line:#1d3344; --accent:#38bdf8; --ok:#34d399; --warn:#fbbf24; --crit:#f87171;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--ground);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+  .topnav{display:flex;align-items:center;gap:22px;height:52px;padding:0 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:700;letter-spacing:.12em;font-size:15px;color:var(--ink)}
+  .brand b{color:var(--accent)}
+  .topnav a{color:var(--ink-dim);text-decoration:none;font-size:13px;padding:4px 2px;border-bottom:2px solid transparent}
+  .topnav a.on{color:var(--ink);border-bottom-color:var(--accent)}
+  .spacer{flex:1}
+  .session{color:var(--ink-dim);font-size:12.5px}
+  .band-wrap{padding:18px 20px 8px}
+  .band-title{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+  .band-title h2{font-size:12px;font-weight:600;letter-spacing:.14em;color:var(--ink-dim);text-transform:uppercase}
+  .band-title .scrub{font-size:12px;color:var(--ink-dim)}
+  .band{position:relative;height:150px;background:linear-gradient(to bottom,var(--sea-deep),#0d2c45 60%,var(--panel));border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .band svg{position:absolute;inset:0;width:100%;height:100%}
+  .band .cur{position:absolute;top:0;bottom:0;width:1px;background:var(--accent);opacity:.7}
+  .band .cur::after{content:"now";position:absolute;top:6px;left:6px;font-size:10px;color:var(--accent);letter-spacing:.1em}
+  .legend{display:flex;gap:16px;margin-top:6px;font-size:11.5px;color:var(--ink-dim)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .rows{padding:10px 20px 20px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);background:#0c1922}
+  td{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .glyph{width:26px;height:14px;display:inline-block;margin-right:8px;vertical-align:middle}
+  .st{font-size:11px;font-weight:700;letter-spacing:.08em;padding:3px 9px;border-radius:10px}
+  .st.run{color:var(--ok);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35)}
+  .st.drain{color:var(--warn);background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)}
+  .st.fail{color:var(--crit);background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3)}
+  .num{font-variant-numeric:tabular-nums;color:var(--ink)}
+  .dim{color:var(--ink-dim);font-variant-numeric:tabular-nums}
+  a{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">Wave<b>maker</b></span>
+  <a class="on" href="#">Swells</a><a href="#">Status</a><a href="#">Spectrum</a>
+  <a href="#">Metrics</a><a href="#">Reports</a><a href="#">Users</a><a href="#">Audit</a>
+  <span class="spacer"></span>
+  <span class="session">admin (owner) · Log out</span>
+</nav>
+
+<section class="band-wrap">
+  <div class="band-title">
+    <h2>Sea state — aggregate RPS across active runs</h2>
+    <span class="scrub">last 2h · 30s resolution · scrub to inspect</span>
+  </div>
+  <div class="band">
+    <svg viewBox="0 0 1200 150" preserveAspectRatio="none">
+      <path d="M0,150 L0,96 C60,90 110,84 180,86 C260,88 300,60 380,58 C450,56 500,74 560,70 C640,66 700,44 780,42 C860,40 900,58 960,62 C1020,66 1080,50 1200,52 L1200,150 Z" fill="var(--sea-surface)" opacity=".85"/>
+      <path d="M0,150 L0,120 C80,116 140,110 220,112 C300,114 360,98 440,96 C520,94 580,104 640,102 C740,100 800,86 880,88 C960,90 1060,80 1200,84 L1200,150 Z" fill="var(--sea-mid)" opacity=".9"/>
+      <path d="M0,150 L0,136 C100,133 180,130 260,131 C360,133 420,124 500,123 C600,122 700,116 800,118 C920,120 1040,112 1200,116 L1200,150 Z" fill="var(--sea-deep)"/>
+      <path d="M0,96 C60,90 110,84 180,86 C260,88 300,60 380,58 C450,56 500,74 560,70 C640,66 700,44 780,42 C860,40 900,58 960,62 C1020,66 1080,50 1200,52" fill="none" stroke="#5fd4f7" stroke-width="1.5"/>
+    </svg>
+    <div class="cur" style="left:78%"></div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--sea-surface)"></i>checkout-swell · 4,210 rps</span>
+    <span><i style="background:var(--sea-mid)"></i>kb-baseline · 2,870 rps</span>
+    <span><i style="background:var(--sea-deep)"></i>login-storm · 1,140 rps</span>
+    <span style="margin-left:auto">peak 9,140 · now 8,220 rps · onset 14:32 spike +38%</span>
+  </div>
+</section>
+
+<main class="rows">
+  <table>
+    <thead><tr><th></th><th>Swell</th><th>State</th><th>Runs</th><th>RPS now</th><th>p99 latency</th><th>Errors</th><th>Started</th></tr></thead>
+    <tbody>
+      <tr><td><svg class="glyph" viewBox="0 0 26 14"><path d="M0,12 C4,8 8,4 13,4 C18,4 22,8 26,12" fill="none" stroke="var(--ok)" stroke-width="2"/></svg><a href="#">checkout-swell</a></td><td><span class="st run">RUNNING</span></td><td class="num">3</td><td class="num">4,210</td><td class="num">86 ms</td><td class="num">0.02%</td><td class="dim">14:02</td></tr>
+      <tr><td><svg class="glyph" viewBox="0 0 26 14"><path d="M0,12 C5,9 9,6 13,6 C17,6 21,9 26,12" fill="none" stroke="var(--warn)" stroke-width="2"/></svg><a href="#">kb-baseline</a></td><td><span class="st drain">DRAINING</span></td><td class="num">1</td><td class="num">2,870</td><td class="num">112 ms</td><td class="num">0.11%</td><td class="dim">12:40</td></tr>
+      <tr><td><svg class="glyph" viewBox="0 0 26 14"><path d="M0,12 L26,12" fill="none" stroke="var(--crit)" stroke-width="2"/></svg><a href="#">login-storm</a></td><td><span class="st fail">FAILED</span></td><td class="num">2</td><td class="num">0</td><td class="dim">—</td><td class="num">6.4%</td><td class="dim">11:05</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

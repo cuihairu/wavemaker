@@ -29,8 +29,8 @@ async function onLogout() {
 
 <template>
   <div class="app">
-    <header>
-      <span class="brand">Wavemaker</span>
+    <header class="topnav">
+      <span class="brand">Wave<b>maker</b></span>
       <nav>
         <RouterLink to="/">Swells</RouterLink>
         <RouterLink to="/status">Status</RouterLink>

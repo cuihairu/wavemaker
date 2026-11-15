@@ -1,0 +1,346 @@
+/*
+ * Wavemaker web shell — "Waveform Status Band" theme.
+ * Tokens follow the direction contract (docs/design/swells-redesign-contract.md):
+ * dark workbench base, sea colors reserved for the band and waveform marks,
+ * status colors carry state semantics only. Dark single theme this round.
+ */
+
+:root {
+  /* own-world base */
+  --ground: #0a141c;
+  --panel: #0f1d28;
+  --line: #1d3344;
+  /* ink (not fixed by the contract; chosen for contrast on --ground) */
+  --ink: #d9e4ee;
+  --ink-dim: #8fa8bc;
+  --ink-faint: #5f7889;
+  /* sea colors: band + waveform marks only */
+  --sea-deep: #0b2239;
+  --sea-mid: #134e6f;
+  --sea-surface: #1b7f9e;
+  /* accent: cursor / links / selection */
+  --accent: #38bdf8;
+  /* status: semantics only, never decoration */
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --crit: #f87171;
+
+  --header-h: 52px;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* keyboard reachability: visible accent ring, never removed */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  letter-spacing: 0.01em;
+}
+
+h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  margin: 26px 0 10px;
+}
+
+/* ---------- top navigation shell ---------- */
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: var(--header-h);
+  padding: 0 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.brand b {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.topnav nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.topnav nav a {
+  display: flex;
+  align-items: center;
+  height: var(--header-h);
+  padding: 0 10px;
+  color: var(--ink-dim);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.topnav nav a:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* selected nav item: accent underline */
+.topnav nav a.router-link-active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.session-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+/* ---------- page scaffold ---------- */
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 22px 20px 48px;
+}
+
+main > a {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+/* ---------- tables ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+th,
+td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+thead th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-dim);
+  background: var(--ground);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: rgba(56, 189, 248, 0.05);
+}
+
+td,
+th {
+  vertical-align: middle;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- controls ---------- */
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+label {
+  color: var(--ink-dim);
+}
+
+form p {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+/* ---------- status & honesty vocabulary (existing classes) ---------- */
+
+.error {
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: var(--radius);
+  color: var(--crit);
+  padding: 12px 14px;
+}
+
+.error-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.muted {
+  color: var(--ink-dim);
+}
+
+.unwired {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.unwired-note {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  margin: 10px 2px 0;
+}
+
+.issue-error {
+  color: var(--crit);
+  font-weight: 600;
+}
+
+.issue-warning {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* ---------- state pills ---------- */
+
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid;
+}
+
+.pill--ok {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.pill--warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.pill--crit {
+  color: var(--crit);
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.pill--neutral {
+  color: var(--ink-dim);
+  border-color: var(--line);
+  background: rgba(29, 51, 68, 0.35);
+}

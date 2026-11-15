@@ -10,7 +10,10 @@
 // Time scrubbing waits for the metrics series API (WM-0412) — nothing is
 // fabricated into a fake time axis.
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { stateTone } from '../api.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // Derived swell list, or null while the status is loading.
@@ -100,11 +103,11 @@ function calmPath(offset = 0) {
 </script>
 
 <template>
-  <section class="sea-band" data-test="sea-band" aria-label="Active swell overview">
+  <section class="sea-band" data-test="sea-band" :aria-label="t('sealand.ariaOverview')">
     <div class="sea-band-head">
-      <h2>Sea state</h2>
+      <h2>{{ t('sealand.heading') }}</h2>
       <span class="muted sea-band-note" data-test="band-note">
-        now — latest composition; history scrubbing lands with the metrics series (WM-0412)
+        {{ t('sealand.note') }}
       </span>
     </div>
 
@@ -128,9 +131,11 @@ function calmPath(offset = 0) {
       <svg viewBox="0 0 1000 150" preserveAspectRatio="none" aria-hidden="true">
         <path class="calm" :d="calmPath(0)" />
       </svg>
-      <p>
-        No active swells —&nbsp;<RouterLink to="/spectrum">launch from Spectrum</RouterLink>
-      </p>
+      <i18n-t keypath="sealand.empty" tag="p" scope="global">
+        <template #link>
+          <RouterLink to="/spectrum">{{ t('sealand.emptyLaunch') }}</RouterLink>
+        </template>
+      </i18n-t>
     </div>
 
     <template v-else>
@@ -139,7 +144,7 @@ function calmPath(offset = 0) {
           viewBox="0 0 1000 150"
           preserveAspectRatio="none"
           role="img"
-          aria-label="Stacked composition of active swells"
+          :aria-label="t('sealand.ariaComposition')"
         >
           <path
             v-for="(layer, i) in layers"
@@ -160,7 +165,7 @@ function calmPath(offset = 0) {
           />
           <line class="now-cursor" x1="994" y1="6" x2="994" y2="144" />
         </svg>
-        <span class="now-tag">now</span>
+        <span class="now-tag">{{ t('sealand.nowTag') }}</span>
       </div>
       <ul class="sea-legend" data-test="band-legend">
         <li
@@ -175,8 +180,8 @@ function calmPath(offset = 0) {
             <span class="chip" :style="{ background: layer.color }" />
             {{ layer.swell.swell_id }}
           </RouterLink>
-          <span class="num">{{ layer.swell.active_runs }} active</span>
-          <span class="unwired" title="no live RPS series yet (WM-0412)">— RPS</span>
+          <span class="num">{{ t('sealand.activeRuns', { n: layer.swell.active_runs }) }}</span>
+          <span class="unwired" :title="t('sealand.tooltipRps')">{{ t('sealand.unwiredRps') }}</span>
         </li>
       </ul>
     </template>

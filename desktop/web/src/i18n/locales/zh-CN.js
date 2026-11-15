@@ -1,0 +1,87 @@
+// 简体中文界面文案。词汇约定遵循 docs/glossary.md:领域术语保留英文原词
+// (Swell / Spectrum / Run / Worker / Controller / Backend / Generator),
+// 只译周边文案;WM-xxxx、ADR-xxxx、命令行原文、RPS / p99 等协议与度量
+// token 不译。
+export default {
+  nav: {
+    swells: 'Swells',
+    status: '状态',
+    spectrum: 'Spectrum',
+    metrics: '指标',
+    reports: '报告',
+    users: '用户',
+    audit: '审计',
+  },
+  shell: {
+    login: '登录',
+    logout: '退出登录',
+  },
+  back: {
+    allSwells: '← 全部 Swells',
+  },
+  common: {
+    loading: '加载中…',
+    retry: '重试',
+    notWired: '未接入',
+    workerActive: '活跃',
+    workerExpired: '已过期',
+    secondsAgo: '{n} 秒前',
+  },
+  sealand: {
+    heading: '海况',
+    note: 'now — 当前构成;历史回放随 metrics 序列(WM-0412)提供',
+    empty: '暂无活跃 Swell — {link}',
+    emptyLaunch: '从 Spectrum 发起',
+    activeRuns: '{n} 活跃',
+    unwiredRps: '— RPS',
+    tooltipRps: '暂无实时 RPS 序列(WM-0412)',
+    nowTag: 'now',
+    ariaOverview: '活跃 Swell 总览',
+    ariaComposition: '活跃 Swell 堆叠构成',
+  },
+  swells: {
+    heading: 'Swells',
+    noSwell: '暂无 Swell。',
+    colWave: '波形',
+    colSwell: 'Swell',
+    colState: '状态',
+    colRuns: '运行数',
+    colRps: '当前 RPS',
+    colP99: 'p99',
+    colErrors: '错误数',
+    colStarted: '开始时间',
+    tooltipRps: '暂无实时 RPS 序列(WM-0412)',
+    tooltipP99: '暂无延迟数据源(WM-0412)',
+    tooltipErrors: '暂无错误数据源(WM-0412)',
+    ariaMark: '{id} 的运行占比标记',
+    unwiredNote:
+      '当前 RPS、p99 与错误数尚无 Controller 数据源(metrics 面,WM-0412)——以「—」呈现,绝不编造。波形标记编码各 Swell 占总运行数的份额。',
+  },
+  login: {
+    heading: '登录',
+    username: '用户名',
+    password: '密码',
+    localNote:
+      '账号仅存于本桌面(用户文件,加盐密码哈希);Controller REST 面无网络认证(ADR-008、ADR-009)。尚无注册用户时,首次登录会创建 admin 账号。',
+  },
+  status: {
+    heading: 'Backend / Worker 状态',
+    backend: 'Backend',
+    state: '状态',
+    protocolVersion: '协议版本',
+    connectedWorkers: '已连接 Worker',
+    expiredWorkers: '过期 Worker',
+    address: '地址',
+    throughputQueue: '吞吐 / 队列',
+    workers: 'Workers',
+    noWorkers: '暂无注册 Worker。',
+    colWorker: 'Worker',
+    colActorLoad: 'Actor 负载',
+    colHeartbeat: '最近心跳',
+    colErrors: '错误数',
+    colCapabilities: '能力',
+    colGeneration: 'Generation',
+    unwiredNote:
+      '标记为「未接入」的字段尚无 Controller 数据源(backend 地址、吞吐/队列、Actor 负载、错误数)。',
+  },
+}

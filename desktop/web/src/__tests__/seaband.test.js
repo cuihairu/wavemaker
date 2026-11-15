@@ -4,6 +4,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SeaBand from '../components/SeaBand.vue'
 import { deriveSwells } from '../api.js'
 import { routes } from '../router.js'
+import { i18n } from '../i18n/index.js'
 
 // SeaBand is presentational: it receives the derived swell list and
 // renders one of its three states. No network boundary to mock.
@@ -21,7 +22,7 @@ describe('SeaBand', () => {
   it('renders one layer and legend entry per swell with active runs', () => {
     const wrapper = mount(SeaBand, {
       props: { swells: deriveSwells(runs) },
-      global: { plugins: [makeRouter()] },
+      global: { plugins: [makeRouter(), i18n] },
     })
     // Two swells exist but sw-1 has one Stopped run — only live runs count.
     const items = wrapper.findAll('[data-test="band-legend-item"]')
@@ -37,7 +38,7 @@ describe('SeaBand', () => {
     // All runs stopped — the sea is honestly calm, not fake-active.
     const wrapper = mount(SeaBand, {
       props: { swells: deriveSwells([{ ...runs[1] }]) },
-      global: { plugins: [makeRouter()] },
+      global: { plugins: [makeRouter(), i18n] },
     })
     const empty = wrapper.find('[data-test="band-empty"]')
     expect(empty.text()).toContain('No active swells')
@@ -48,7 +49,7 @@ describe('SeaBand', () => {
   it('ripples as a skeleton while the status is loading', () => {
     const wrapper = mount(SeaBand, {
       props: { swells: null },
-      global: { plugins: [makeRouter()] },
+      global: { plugins: [makeRouter(), i18n] },
     })
     expect(wrapper.find('[data-test="band-loading"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="band-empty"]').exists()).toBe(false)

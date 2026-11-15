@@ -13,6 +13,7 @@ import LoginView from '../views/LoginView.vue'
 import { GENERATOR_METRICS, SERVER_METRICS } from '../metrics.js'
 import { REPORT_SECTIONS } from '../reports.js'
 import { routes } from '../router.js'
+import { i18n } from '../i18n/index.js'
 
 // Mock only the shell boundary (network call + Tauri commands); the
 // pure derivation helpers stay real so the views are exercised end to
@@ -67,7 +68,7 @@ function makeRouter() {
 describe('SwellListView', () => {
   it('renders derived swell rows from the controller status', async () => {
     fetchStatus.mockResolvedValue({ runs })
-    const wrapper = mount(SwellListView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SwellListView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     const rows = wrapper.findAll('[data-test="swell-row"]')
     expect(rows).toHaveLength(2)
@@ -79,7 +80,7 @@ describe('SwellListView', () => {
 
   it('renders the empty state honestly (no fabricated swells)', async () => {
     fetchStatus.mockResolvedValue({ runs: [] })
-    const wrapper = mount(SwellListView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SwellListView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="empty"]').text()).toBe('No swells yet.')
   })
@@ -93,7 +94,7 @@ describe('SwellListView', () => {
       () => new Promise((_resolve, reject) => { rejectStatus = reject })
     )
     const wrapper = mount(SwellListView, {
-      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+      global: { plugins: [i18n], stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     rejectStatus(new Error('controller_status_failed: 500'))
@@ -108,7 +109,7 @@ describe('SwellDetailView', () => {
     const router = makeRouter()
     router.push('/swell/sw-1')
     await router.isReady()
-    const wrapper = mount(SwellDetailView, { global: { plugins: [router] } })
+    const wrapper = mount(SwellDetailView, { global: { plugins: [router, i18n] } })
     await flushPromises()
     expect(wrapper.find('h1').text()).toBe('sw-1')
     const rows = wrapper.findAll('[data-test="run-row"]')
@@ -122,7 +123,7 @@ describe('SwellDetailView', () => {
     const router = makeRouter()
     router.push('/swell/sw-ghost')
     await router.isReady()
-    const wrapper = mount(SwellDetailView, { global: { plugins: [router] } })
+    const wrapper = mount(SwellDetailView, { global: { plugins: [router, i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="empty"]').text()).toBe('No runs for this swell.')
   })
@@ -150,7 +151,7 @@ describe('StatusView', () => {
       ],
       runs,
     })
-    const wrapper = mount(StatusView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(StatusView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="backend-state"]').text()).toContain('running')
     expect(wrapper.find('[data-test="backend-worker-count"]').text()).toContain('2')
@@ -176,7 +177,7 @@ describe('StatusView', () => {
       workers: [],
       runs: [],
     })
-    const wrapper = mount(StatusView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(StatusView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="empty"]').text()).toBe('No workers registered.')
     expect(wrapper.find('[data-test="backend-state"]').text()).toContain('running')
@@ -188,7 +189,7 @@ describe('StatusView', () => {
       () => new Promise((_resolve, reject) => { rejectStatus = reject })
     )
     const wrapper = mount(StatusView, {
-      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+      global: { plugins: [i18n], stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     rejectStatus(new Error('controller_status_failed: 500'))
@@ -202,7 +203,7 @@ describe('SpectrumView', () => {
 
   it('loads a spectrum file into the editor', async () => {
     loadSpectrum.mockResolvedValue(YAML)
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="path-input"]').setValue('/tmp/spectrum.yaml')
     await wrapper.find('[data-test="load"]').trigger('click')
     await flushPromises()
@@ -229,7 +230,7 @@ describe('SpectrumView', () => {
         },
       ],
     })
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="editor"]').setValue(YAML)
     await wrapper.find('[data-test="validate"]').trigger('click')
     await flushPromises()
@@ -248,7 +249,7 @@ describe('SpectrumView', () => {
       parse_error: null,
       issues: [{ severity: 'warning', code: 'W_X', field: 'f', message: 'm' }],
     })
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="validate"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="valid"]').text()).toBe('Config is valid.')
@@ -261,7 +262,7 @@ describe('SpectrumView', () => {
       parse_error: 'invalid YAML at line 1',
       issues: [],
     })
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="validate"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="parse-error"]').text()).toContain('invalid YAML at line 1')
@@ -270,7 +271,7 @@ describe('SpectrumView', () => {
 
   it('confirms a save with the written path', async () => {
     saveSpectrum.mockResolvedValue(undefined)
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="path-input"]').setValue('/tmp/spectrum.yaml')
     await wrapper.find('[data-test="save"]').trigger('click')
     await flushPromises()
@@ -280,7 +281,7 @@ describe('SpectrumView', () => {
 
   it('surfaces a named shell error when loading fails', async () => {
     loadSpectrum.mockRejectedValue(new Error('cannot read /nope: not found'))
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="load"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="error"]').text()).toContain('cannot read /nope')
@@ -302,7 +303,7 @@ describe('MetricsView', () => {
 
   it('renders the live summary and every engine-defined metric family honestly', async () => {
     fetchStatus.mockResolvedValue(statusPayload)
-    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="backend-state"]').text()).toContain('running')
     expect(wrapper.find('[data-test="worker-count"]').text()).toBe('2')
@@ -322,7 +323,7 @@ describe('MetricsView', () => {
 
   it('explains why no curves are drawn, without fabricating a data source', async () => {
     fetchStatus.mockResolvedValue(statusPayload)
-    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     const note = wrapper.find('[data-test="unwired-note"]').text()
     expect(note).toContain('no metrics endpoint')
@@ -334,7 +335,7 @@ describe('MetricsView', () => {
 
   it('renders the summary even when no workers are registered', async () => {
     fetchStatus.mockResolvedValue({ ...statusPayload, worker_count: 0, workers: [] })
-    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(MetricsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="worker-count"]').text()).toBe('0')
   })
@@ -345,7 +346,7 @@ describe('MetricsView', () => {
       () => new Promise((_resolve, reject) => { rejectStatus = reject })
     )
     const wrapper = mount(MetricsView, {
-      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+      global: { plugins: [i18n], stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     rejectStatus(new Error('controller_status_failed: 500'))
@@ -363,7 +364,7 @@ describe('ReportsView', () => {
 
   it('compares the two selected runs side by side from real run data', async () => {
     fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
-    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     // Default selection is the first two runs (newest-first).
     expect(wrapper.find('[data-test="head-a"]').text()).toBe('r1')
@@ -379,7 +380,7 @@ describe('ReportsView', () => {
 
   it('documents the report sections the engine defines', async () => {
     fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
-    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     const sections = wrapper.findAll('[data-test="report-section"]')
     expect(sections).toHaveLength(REPORT_SECTIONS.length)
@@ -388,7 +389,7 @@ describe('ReportsView', () => {
 
   it('explains why report content is not compared, without fabricating it', async () => {
     fetchStatus.mockResolvedValue({ runs: compareRunsPayload })
-    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     const note = wrapper.find('[data-test="unwired-note"]').text()
     expect(note).toContain('no report file is persisted')
@@ -398,7 +399,7 @@ describe('ReportsView', () => {
 
   it('shows an honest empty state when there are no runs', async () => {
     fetchStatus.mockResolvedValue({ runs: [] })
-    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(ReportsView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     expect(wrapper.find('[data-test="empty"]').text()).toContain('No runs to compare')
     // The honest note still explains the missing report content.
@@ -411,7 +412,7 @@ describe('ReportsView', () => {
       () => new Promise((_resolve, reject) => { rejectStatus = reject })
     )
     const wrapper = mount(ReportsView, {
-      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+      global: { plugins: [i18n], stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     rejectStatus(new Error('controller_status_failed: 500'))
@@ -432,14 +433,14 @@ describe('UsersView', () => {
   function mountUsers(session) {
     permissionMatrix.mockResolvedValue(matrix)
     currentSession.mockResolvedValue(session)
-    return mount(UsersView, { global: { plugins: [makeRouter()] } })
+    return mount(UsersView, { global: { plugins: [makeRouter(), i18n] } })
   }
 
   it('renders the permission matrix verbatim from the shell', async () => {
     currentSession.mockResolvedValue(null)
     permissionMatrix.mockResolvedValue(matrix)
     listUsers.mockRejectedValue(new Error('not_authenticated'))
-    const wrapper = mount(UsersView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(UsersView, { global: { plugins: [makeRouter(), i18n] } })
     await flushPromises()
     const rows = wrapper.findAll('[data-test="matrix-row"]')
     expect(rows).toHaveLength(matrix.length)
@@ -502,7 +503,7 @@ describe('LoginView', () => {
     router.push('/login')
     await router.isReady()
     const wrapper = mount(LoginView, {
-      global: { plugins: [router] },
+      global: { plugins: [router, i18n] },
     })
     await wrapper.find('[data-test="username-input"]').setValue('ada')
     await wrapper.find('[data-test="password-input"]').setValue('pw')
@@ -516,7 +517,7 @@ describe('LoginView', () => {
 
   it('renders the named shell error on a failed login', async () => {
     login.mockRejectedValue(new Error('login_failed: BadPassword'))
-    const wrapper = mount(LoginView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(LoginView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="username-input"]').setValue('ada')
     await wrapper.find('[data-test="password-input"]').setValue('wrong')
     await wrapper.find('form').trigger('submit')
@@ -540,7 +541,7 @@ describe('SpectrumView timeline', () => {
 
   it('renders two single-series charts and a sample table from the engine curve', async () => {
     timelineFor.mockResolvedValue(timelinePayload)
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="timeline"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="timeline-window"]').text()).toContain('1200')
@@ -556,7 +557,7 @@ describe('SpectrumView timeline', () => {
     timelineFor.mockRejectedValue(
       new Error('cannot build timeline: spectrum has no arrival section')
     )
-    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(SpectrumView, { global: { plugins: [makeRouter(), i18n] } })
     await wrapper.find('[data-test="timeline"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="error"]').text()).toContain('no arrival section')
@@ -586,7 +587,7 @@ describe('AuditView', () => {
   ]
 
   function mountAudit() {
-    return mount(AuditView, { global: { plugins: [makeRouter()] } })
+    return mount(AuditView, { global: { plugins: [makeRouter(), i18n] } })
   }
 
   it('renders the trail verbatim and queries everything on open', async () => {

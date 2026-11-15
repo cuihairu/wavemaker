@@ -1,8 +1,11 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { fetchStatus, deriveSwells, formatStates, stateTone } from '../api.js'
 import SeaBand from '../components/SeaBand.vue'
+
+const { t } = useI18n()
 
 const swells = ref(null)
 const error = ref('')
@@ -47,25 +50,25 @@ function sparkPath(swell) {
 
 <template>
   <main>
-    <h1>Swells</h1>
+    <h1>{{ t('swells.heading') }}</h1>
     <SeaBand v-if="!error" :swells="swells" @open="openSwell" />
     <div v-if="error" class="error error-card" data-test="error">
       <span>{{ error }}</span>
-      <button data-test="retry" @click="load">Retry</button>
+      <button data-test="retry" @click="load">{{ t('common.retry') }}</button>
     </div>
-    <p v-else-if="swells === null" data-test="loading">Loading…</p>
-    <p v-else-if="swells.length === 0" data-test="empty">No swells yet.</p>
+    <p v-else-if="swells === null" data-test="loading">{{ t('common.loading') }}</p>
+    <p v-else-if="swells.length === 0" data-test="empty">{{ t('swells.noSwell') }}</p>
     <table v-else data-test="swell-table">
       <thead>
         <tr>
-          <th>Wave</th>
-          <th>Swell</th>
-          <th>State</th>
-          <th class="num">Runs</th>
-          <th class="num">RPS now</th>
-          <th class="num">p99</th>
-          <th class="num">Errors</th>
-          <th class="num">Started</th>
+          <th>{{ t('swells.colWave') }}</th>
+          <th>{{ t('swells.colSwell') }}</th>
+          <th>{{ t('swells.colState') }}</th>
+          <th class="num">{{ t('swells.colRuns') }}</th>
+          <th class="num">{{ t('swells.colRps') }}</th>
+          <th class="num">{{ t('swells.colP99') }}</th>
+          <th class="num">{{ t('swells.colErrors') }}</th>
+          <th class="num">{{ t('swells.colStarted') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -84,7 +87,7 @@ function sparkPath(swell) {
               height="14"
               viewBox="0 0 26 14"
               role="img"
-              :aria-label="`runs share mark for ${swell.swell_id}`"
+              :aria-label="t('swells.ariaMark', { id: swell.swell_id })"
             >
               <path :d="sparkPath(swell)" fill="none" stroke="var(--sea-surface)" stroke-width="1.5" />
             </svg>
@@ -110,17 +113,15 @@ function sparkPath(swell) {
             </span>
           </td>
           <td class="num">{{ swell.run_count }}</td>
-          <td class="num"><span class="unwired" title="no live RPS series yet (WM-0412)">—</span></td>
-          <td class="num"><span class="unwired" title="no latency data source yet (WM-0412)">—</span></td>
-          <td class="num"><span class="unwired" title="no error data source yet (WM-0412)">—</span></td>
+          <td class="num"><span class="unwired" :title="t('swells.tooltipRps')">—</span></td>
+          <td class="num"><span class="unwired" :title="t('swells.tooltipP99')">—</span></td>
+          <td class="num"><span class="unwired" :title="t('swells.tooltipErrors')">—</span></td>
           <td class="num">{{ new Date(swell.created_at_min * 1000).toLocaleString() }}</td>
         </tr>
       </tbody>
     </table>
     <p v-if="swells && swells.length > 0" class="unwired-note" data-test="unwired-note">
-      RPS now, p99 and error counts have no controller data source yet (metrics face,
-      WM-0412) — shown as "—", never fabricated. The wave mark encodes each swell's
-      share of total runs.
+      {{ t('swells.unwiredNote') }}
     </p>
   </main>
 </template>

@@ -6,7 +6,10 @@
 // returns to the swell list.
 import { inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { login } from '../api.js'
+
+const { t } = useI18n()
 
 // Provided by App.vue — the single session state for the header.
 const session = inject('session', ref(null))
@@ -34,17 +37,17 @@ async function onLogin() {
 
 <template>
   <main>
-    <RouterLink to="/">← All swells</RouterLink>
-    <h1>Log in</h1>
+    <RouterLink to="/">{{ t('back.allSwells') }}</RouterLink>
+    <h1>{{ t('login.heading') }}</h1>
     <section data-test="login-section">
       <form @submit.prevent="onLogin">
         <p>
           <label>
-            Username
+            {{ t('login.username') }}
             <input v-model="username" data-test="username-input" autocomplete="username" />
           </label>
           <label>
-            Password
+            {{ t('login.password') }}
             <input
               v-model="password"
               data-test="password-input"
@@ -52,16 +55,13 @@ async function onLogin() {
               autocomplete="current-password"
             />
           </label>
-          <button type="submit" data-test="login" :disabled="busy">Log in</button>
+          <button type="submit" data-test="login" :disabled="busy">{{ t('login.heading') }}</button>
         </p>
       </form>
       <p v-if="error" class="error" data-test="error">{{ error }}</p>
     </section>
     <p class="unwired-note" data-test="local-note">
-      Accounts are local to this desktop (users file with salted password
-      hashes); the controller REST surface has no network authentication
-      (ADR-008, ADR-009). If no users are registered yet, the first login
-      creates the admin account.
+      {{ t('login.localNote') }}
     </p>
   </main>
 </template>

@@ -50,11 +50,19 @@ function areaPath(top, bottom) {
   return `${down}${back}Z`
 }
 
+function linePath(points) {
+  return points
+    .map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join('')
+}
+
 const layers = computed(() => {
   if (!props.swells) return []
   const active = props.swells
     .map((swell) => ({ ...swell, active_runs: activeRunCount(swell) }))
     .filter((swell) => swell.active_runs > 0)
+  // Largest stratum at the bottom (deep water), smallest at the surface.
+  active.sort((a, b) => b.active_runs - a.active_runs)
   const total = active.reduce((sum, swell) => sum + swell.active_runs, 0)
   let stacked = 0
   return active.map((swell, i) => {
@@ -66,13 +74,14 @@ const layers = computed(() => {
     stacked = Math.min(stacked + frac, 0.96)
     const topFrac = stacked
     const amp = Math.min(6, 3 + share * 6)
+    const top = waveBoundary(150 - topFrac * 150, amp, i * 1.7)
+    const bottom = waveBoundary(150 - bottomFrac * 150, amp * 0.6, i * 1.7 + 2.4)
     return {
       swell,
       color: SEA[i % 3],
-      d: areaPath(
-        waveBoundary(150 - topFrac * 150, amp, i * 1.7),
-        waveBoundary(150 - bottomFrac * 150, amp * 0.6, i * 1.7 + 2.4),
-      ),
+      d: areaPath(top, bottom),
+      // Faint surface line so even the darkest stratum reads against the panel.
+      edge: linePath(top),
     }
   })
 })
@@ -120,7 +129,7 @@ function calmPath(offset = 0) {
         <path class="calm" :d="calmPath(0)" />
       </svg>
       <p>
-        No active swells — <RouterLink to="/spectrum">launch from Spectrum</RouterLink>
+        No active swells —&nbsp;<RouterLink to="/spectrum">launch from Spectrum</RouterLink>
       </p>
     </div>
 
@@ -142,6 +151,12 @@ function calmPath(offset = 0) {
             @mouseenter="hovered = i"
             @mouseleave="hovered = -1"
             @click="$emit('open', layer.swell.swell_id)"
+          />
+          <path
+            v-for="layer in layers"
+            :key="`${layer.swell.swell_id}-edge`"
+            class="sea-edge"
+            :d="layer.edge"
           />
           <line class="now-cursor" x1="994" y1="6" x2="994" y2="144" />
         </svg>
@@ -206,6 +221,14 @@ function calmPath(offset = 0) {
   filter: brightness(1.4);
 }
 
+.sea-edge {
+  fill: none;
+  stroke: var(--sea-surface);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
 .calm {
   fill: rgba(27, 127, 158, 0.25);
 }
@@ -255,12 +278,18 @@ function calmPath(offset = 0) {
 .sea-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 18px;
+  gap: 8px 22px;
   margin: 0;
   padding: 10px 2px 0;
   list-style: none;
   font-size: 13px;
   color: var(--ink-dim);
+}
+
+.sea-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .sea-legend a {

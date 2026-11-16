@@ -2,5 +2,13 @@
 # the Vite/Vitest binaries; without this pnpm refuses to run it.
 allowBuilds:
   esbuild: true
+# Lockfile advisories in dev-only tool chains (dependabot alerts on the
+# lock file): happy-dom below 21.0.0 has a VM-context-escape RCE,
+# minimatch below 11.0.1 a glob-parts DoS. Neither is imported by this
+# app — vitest uses the jsdom environment — but the lock file carries
+# them, so pin them to patched majors.
+overrides:
+  happy-dom: '^21.0.0'
+  minimatch: '^11.0.1'
 minimumReleaseAgeExclude:
   - '@tauri-apps/plugin-http@2.9.0'

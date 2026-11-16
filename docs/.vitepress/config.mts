@@ -1,8 +1,57 @@
 import { defineConfig } from 'vitepress'
 
+const BASE = '/wavemaker/'
+
+// DOCS-LANG-001: browser-language detection. Runs before hydration so no
+// EN frame flashes for a Chinese reader. Precedence: ?lang=zh|en (one-shot
+// override, remembered) > a recorded manual choice > navigator.language.
+// Only the two locale HOME pages redirect — deep links are never hijacked,
+// and clicking the language dropdown records an explicit preference.
+const langDetect = `(function () {
+  var KEY = 'wm-docs-lang';
+  var HOME = ${JSON.stringify(BASE)};
+  var ZH = HOME + 'zh/';
+  function same(a, b) { return a === b || a === b + 'index.html'; }
+  var href = location.pathname;
+  var atHome = same(href, HOME);
+  var atZhHome = same(href, ZH);
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a) return;
+    var h = a.getAttribute('href') || '';
+    var p = h.replace(${JSON.stringify(BASE)}, '');
+    var isZh = p === '/zh/' || p === 'zh/' || p === '/zh/index.html' || p === 'zh/index.html';
+    var isEn = p === '/' || p === '' || p === '/index.html' || p === 'index.html';
+    if (isZh || isEn) {
+      try { localStorage.setItem(KEY, isZh ? 'zh' : 'en'); } catch (e) {}
+    }
+  }, true);
+  if (!atHome && !atZhHome) return;
+  var explicit = null;
+  try { explicit = localStorage.getItem(KEY); } catch (e) {}
+  var forced = new URLSearchParams(location.search).get('lang');
+  if (forced === 'zh' || forced === 'en') {
+    explicit = forced;
+    try { localStorage.setItem(KEY, forced); } catch (e) {}
+    var rest = location.search.replace(/[?&]lang=[^&]*/, '');
+    if (rest.indexOf('&') === 0) rest = '?' + rest.slice(1);
+    history.replaceState(null, '', href + rest);
+  }
+  if (!explicit) {
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+    explicit = nav.toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+  }
+  if (atHome && explicit === 'zh') { location.replace(ZH); }
+  else if (atZhHome && explicit === 'en') { location.replace(HOME); }
+})();`
+
 export default defineConfig({
-  base: '/wavemaker/',
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/wavemaker/favicon.svg' }]],
+  base: BASE,
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: BASE + 'favicon.svg' }],
+    ['script', {}, langDetect],
+  ],
 
   title: 'Wavemaker',
   description:

@@ -114,6 +114,10 @@ export default defineConfig({
             ]
           },
           {
+            text: 'Agent Interface',
+            items: [{ text: 'MCP Server', link: '/mcp' }]
+          },
+          {
             text: 'Planning',
             items: [
               { text: 'Roadmap', link: '/roadmap' },
@@ -179,6 +183,10 @@ export default defineConfig({
             items: [
               { text: 'Assertion Provider 业务断言', link: '/zh/spec/assertion-provider' }
             ]
+          },
+          {
+            text: 'Agent 接口',
+            items: [{ text: 'MCP 服务', link: '/zh/mcp' }]
           },
           {
             text: '计划',

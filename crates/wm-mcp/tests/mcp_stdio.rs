@@ -6,7 +6,7 @@
 //! green run asserts frame legality on the whole exchange.
 
 use rmcp::{
-    model::{CallToolRequestParams, ContentBlock},
+    model::{CallToolRequestParams, ContentBlock, ReadResourceRequestParams, ResourceContents},
     transport::TokioChildProcess,
     ServiceExt,
 };
@@ -125,6 +125,43 @@ async fn mcp_stdio_end_to_end_initialize_list_call() -> anyhow::Result<()> {
         "{}",
         report
     );
+
+    // 4) resources/list + resources/read (WM-MCP-002): the knowledge face.
+    //    Exactly the embedded docs set (configuration + glossary +
+    //    spectrum + test-plan, en + zh; glossary bilingual by convention),
+    //    and one real read must round-trip the authoritative page — the
+    //    answer surface for config/glossary questions, so an agent reads
+    //    the doc instead of answering from memory.
+    let resources = client.list_all_resources().await?;
+    let mut uris: Vec<String> = resources.iter().map(|r| r.uri.clone()).collect();
+    uris.sort();
+    assert_eq!(
+        uris,
+        vec![
+            "wm://docs/configuration",
+            "wm://docs/configuration.zh",
+            "wm://docs/glossary",
+            "wm://docs/spectrum",
+            "wm://docs/spectrum.zh",
+            "wm://docs/test-plan",
+            "wm://docs/test-plan.zh",
+        ],
+        "resources = {uris:?}"
+    );
+    for r in &resources {
+        assert_eq!(r.mime_type.as_deref(), Some("text/markdown"), "{}", r.uri);
+    }
+    let glossary = client
+        .read_resource(ReadResourceRequestParams::new("wm://docs/glossary"))
+        .await?;
+    let ResourceContents::TextResourceContents { uri, text, .. } = &glossary.contents[0] else {
+        panic!(
+            "glossary must return text contents, got {:?}",
+            glossary.contents
+        );
+    };
+    assert_eq!(uri, "wm://docs/glossary");
+    assert!(text.contains("Do not confuse"), "real glossary page");
 
     client.cancel().await?;
     Ok(())

@@ -26,6 +26,26 @@ Point an MCP client at the `wm-mcp` binary over stdio, e.g.:
 | `run_test_plan` | `wm-cli::plan` + `wm-cli::runner` | The `wm test run` engine: executes a declarative test plan TOML end to end (steps, assertions, run directory with report.md). `backend=stub` (default) runs the in-process simulator — metrics are synthetic and the report says so; `backend=controller` drives a real controller. A `failed` verdict is a success result carrying the reason. |
 | `get_test_report` | run directory files | Reads a finished plan run back: run.json (structured outcome) plus report.md (rendered view). Without `run_dir`, returns the latest run under `wm-runs`. |
 
+## Resources
+
+Tools carry state, not knowledge — so configuration and glossary questions
+("what does `arrival.ramp` mean", "how do I configure a soak test") are
+answered through MCP **resources** instead of a model guessing from memory.
+`wm-mcp` embeds the docs pages at build time (`include_str!` — the snapshot
+of the commit the binary was built from) and serves them over
+`resources/list` + `resources/read`:
+
+| URI | Page |
+|---|---|
+| `wm://docs/configuration` / `wm://docs/configuration.zh` | configuration reference (en / zh-CN) |
+| `wm://docs/glossary` | domain glossary (bilingual by its own convention) |
+| `wm://docs/spectrum` / `wm://docs/spectrum.zh` | Spectrum & deterministic plans (en / zh-CN) |
+| `wm://docs/test-plan` / `wm://docs/test-plan.zh` | test-plan structure, actions, assertions (en / zh-CN) |
+
+All resources are `text/markdown`. The advertised server capabilities
+include `resources`; the stdio e2e asserts the exact URI set and a real
+read round-trip.
+
 ## Honest boundaries
 
 - **No metrics or report tools for live runs.** The engine side has no data

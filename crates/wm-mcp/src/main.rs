@@ -42,11 +42,17 @@
 mod forward;
 mod timeline;
 
+use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, ContentBlock},
-    schemars, tool, tool_router, ErrorData, ServiceExt,
+    model::{
+        CallToolResult, ContentBlock, ListResourcesResult, PaginatedRequestParams,
+        ReadResourceRequestParams, ReadResourceResponse, Resource, ResourceContents,
+    },
+    schemars, tool, tool_handler, tool_router, ErrorData, ServerHandler, ServiceExt,
 };
+
+use rmcp::model::ReadResourceResult;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -388,7 +394,7 @@ pub struct GetTestReportParams {
 #[derive(Debug, Clone, Default)]
 pub struct WavemakerMcp;
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl WavemakerMcp {
     #[tool(
         description = "List wavemaker runs, or fetch one run by id. Without run_id: every run is returned, taken from GET /api/v1/status (the controller has no dedicated list endpoint). With run_id: forwards GET /api/v1/runs/{run_id}. The controller JSON is forwarded, not re-modeled."
@@ -481,6 +487,145 @@ impl WavemakerMcp {
     }
 }
 
+// —— Knowledge resources (WM-MCP-002) ——
+
+/// A docs page embedded at BUILD time with `include_str!`. Configuration
+/// and glossary questions ("what does `arrival.ramp` mean", "how do I
+/// configure a soak test") have no tool to answer them — tools carry
+/// state, not knowledge — and a model answering from memory can
+/// hallucinate. These resources hand the agent the authoritative page
+/// instead. The snapshot is the docs of the commit the binary was built
+/// from, never a live read of the repo.
+struct EmbeddedDoc {
+    uri: &'static str,
+    name: &'static str,
+    description: &'static str,
+    text: &'static str,
+}
+
+macro_rules! doc {
+    ($name:literal, $path:literal, $desc:literal) => {
+        EmbeddedDoc {
+            uri: concat!("wm://docs/", $name),
+            name: $name,
+            description: $desc,
+            text: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/", $path)),
+        }
+    };
+}
+
+/// The configuration-knowledge set: the config draft, the domain glossary,
+/// and the spectrum/test-plan references, each in the language it is
+/// authoritative for (glossary is bilingual by its own convention).
+const EMBEDDED_DOCS: &[EmbeddedDoc] = &[
+    doc!(
+        "configuration",
+        "configuration.md",
+        "Wavemaker configuration reference (spectrum, lifetime, saturation policies) - English"
+    ),
+    doc!(
+        "configuration.zh",
+        "zh/configuration.md",
+        "Wavemaker 配置参考（Spectrum、lifetime、饱和策略）— 简体中文"
+    ),
+    doc!(
+        "glossary",
+        "glossary.md",
+        "Domain glossary: Swell, Spectrum, Worker, Controller, Basin... (bilingual)"
+    ),
+    doc!(
+        "spectrum",
+        "spectrum.md",
+        "Spectrum and deterministic plans reference - English"
+    ),
+    doc!(
+        "spectrum.zh",
+        "zh/spectrum.md",
+        "Spectrum 与确定性计划参考 — 简体中文"
+    ),
+    doc!(
+        "test-plan",
+        "test-plan.md",
+        "Test plan structure, the eight actions, assertion directions and backends - English"
+    ),
+    doc!(
+        "test-plan.zh",
+        "zh/test-plan.md",
+        "测试计划结构、八种 action、断言方向与后端 — 简体中文"
+    ),
+];
+
+/// The resource list as an MCP Resource — pure so tests need no handler
+/// context.
+fn embedded_resource_list() -> Vec<Resource> {
+    EMBEDDED_DOCS
+        .iter()
+        .map(|d| {
+            let mut r = Resource::new(d.uri, d.name);
+            r.description = Some(d.description.into());
+            r.mime_type = Some("text/markdown".into());
+            r.size = Some(d.text.len() as u64);
+            r
+        })
+        .collect()
+}
+
+/// Look up one embedded doc by URI; unknown URIs get the MCP
+/// RESOURCE_NOT_FOUND error, never fabricated content.
+fn read_embedded_doc(uri: &str) -> Result<ReadResourceResult, ErrorData> {
+    let doc = EMBEDDED_DOCS
+        .iter()
+        .find(|d| d.uri == uri)
+        .ok_or_else(|| ErrorData::resource_not_found(uri.to_string(), None))?;
+    Ok(ReadResourceResult::new(vec![
+        ResourceContents::TextResourceContents {
+            uri: doc.uri.into(),
+            mime_type: Some("text/markdown".into()),
+            text: doc.text.into(),
+            meta: None,
+        },
+    ]))
+}
+
+#[tool_handler]
+impl ServerHandler for WavemakerMcp {
+    // get_info is written by hand so the advertised capabilities include
+    // resources; the tool_handler macro only generates it when absent, and
+    // its generated form enables tools only.
+    fn get_info(&self) -> rmcp::model::ServerConfig {
+        rmcp::model::ServerConfig::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(rmcp::model::Implementation::from_build_env())
+        .with_instructions(
+            "wavemaker load-testing tools: query state via the read tools, \
+             validate or project a spectrum before running it, execute \
+             scenarios and test plans. For configuration/knowledge questions \
+             (config keys, glossary, plan structure) read the docs resources \
+             instead of answering from memory.",
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        Ok(ListResourcesResult::with_all_items(embedded_resource_list()))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        Ok(read_embedded_doc(&request.uri)?.into())
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // stdio transport: stdout carries MCP frames only; this server prints
@@ -493,6 +638,7 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::model::ErrorCode;
     use std::io::Write;
     use std::sync::Arc;
     use wm_controller::http::router as controller_router;
@@ -528,6 +674,103 @@ mod tests {
         });
 
         format!("http://{addr}")
+    }
+
+    // —— knowledge resources (WM-MCP-002) ——
+
+    #[test]
+    fn resources_list_is_exactly_the_embedded_doc_set() {
+        let mut uris: Vec<&str> = EMBEDDED_DOCS.iter().map(|d| d.uri).collect();
+        uris.sort();
+        // Seven pages: configuration + glossary + spectrum + test-plan,
+        // each reference in en and zh (glossary is bilingual by its own
+        // convention). A doc that stops existing fails the build at
+        // include_str!, so this list cannot contain phantom entries.
+        assert_eq!(
+            uris,
+            vec![
+                "wm://docs/configuration",
+                "wm://docs/configuration.zh",
+                "wm://docs/glossary",
+                "wm://docs/spectrum",
+                "wm://docs/spectrum.zh",
+                "wm://docs/test-plan",
+                "wm://docs/test-plan.zh",
+            ]
+        );
+        for d in EMBEDDED_DOCS {
+            assert!(!d.text.is_empty(), "{} embeds empty text", d.uri);
+            // Pages start with markdown or with YAML frontmatter.
+            assert!(
+                d.text.starts_with('#') || d.text.starts_with("---"),
+                "{} is not markdown",
+                d.uri
+            );
+            assert!(
+                d.text.len() > 1000,
+                "{} looks truncated: {} bytes",
+                d.uri,
+                d.text.len()
+            );
+        }
+    }
+
+    #[test]
+    fn read_resource_round_trips_each_uri_with_marker_content() {
+        let markers: &[(&str, &str)] = &[
+            // Distinctive strings from each page — content is the real doc,
+            // never a stub. The zh pages keep glossary terms in English
+            // (docs/glossary.md convention), so those markers are the
+            // English terms.
+            ("wm://docs/configuration", "saturation"),
+            ("wm://docs/configuration.zh", "saturation"),
+            ("wm://docs/glossary", "Do not confuse"),
+            ("wm://docs/spectrum", "ramp"),
+            ("wm://docs/spectrum.zh", "ramp"),
+            ("wm://docs/test-plan", "step_load"),
+            ("wm://docs/test-plan.zh", "断言"),
+        ];
+        for (uri, marker) in markers {
+            let result = read_embedded_doc(uri).unwrap();
+            assert_eq!(result.contents.len(), 1, "{uri}");
+            let ResourceContents::TextResourceContents {
+                uri: back, text, ..
+            } = &result.contents[0]
+            else {
+                panic!("{uri} must return text contents");
+            };
+            assert_eq!(back, uri);
+            assert!(text.contains(marker), "{uri} lacks marker {marker:?}");
+        }
+    }
+
+    #[test]
+    fn read_resource_names_unknown_uris_instead_of_fabricating() {
+        let err = read_embedded_doc("wm://docs/ghost-page").unwrap_err();
+        assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
+    }
+
+    #[test]
+    fn server_advertises_tools_and_resources_capabilities() {
+        let info = WavemakerMcp.get_info();
+        let caps = info.capabilities;
+        assert!(caps.tools.is_some(), "tools capability must be advertised");
+        assert!(
+            caps.resources.is_some(),
+            "resources capability must be advertised"
+        );
+    }
+
+    #[test]
+    fn resources_are_listed_with_size_and_markdown_mime() {
+        let resources = embedded_resource_list();
+        assert_eq!(resources.len(), EMBEDDED_DOCS.len());
+        for r in &resources {
+            assert_eq!(r.mime_type.as_deref(), Some("text/markdown"), "{}", r.uri);
+            let d = EMBEDDED_DOCS.iter().find(|d| d.uri == r.uri).unwrap();
+            assert_eq!(r.size, Some(d.text.len() as u64), "{}", r.uri);
+            assert!(r.description.is_some(), "{}", r.uri);
+        }
     }
 
     // —— validate_spectrum ——
